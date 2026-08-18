@@ -1,0 +1,32 @@
+# dgmon push agent systemd unit.
+# Run this on every GPU node that pushes snapshots to the central server.
+#
+# Install:
+#   sudo cp deploy/systemd/dgmon-push.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now dgmon-push
+#
+# Adjust ExecStart and Environment lines for your deployment.
+
+[Unit]
+Description=dgmon push agent
+Documentation=https://github.com/your-org/dgmon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Path to the dgmon binary and the push config. Adjust for your install.
+ExecStart=/usr/local/bin/dgmon push --config /etc/dgmon/dgmon.json
+Environment=DGMON_CONFIG=/etc/dgmon/dgmon.json
+Restart=on-failure
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/dgmon
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+# dgmon aggregation server systemd unit.
+# Install:
+#   sudo cp deploy/systemd/dgmon-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now dgmon-server
+#
+# Adjust ExecStart flags and Environment lines for your deployment.
+
+[Unit]
+Description=dgmon aggregation server
+Documentation=https://github.com/your-org/dgmon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Path to the dgmon binary. Adjust for your install location.
+ExecStart=/usr/local/bin/dgmon server --listen 0.0.0.0:9401 --data-dir /var/lib/dgmon
+# Enable time-series storage. Remove this line to run memory-only.
+Environment=DGMON_DATA_DIR=/var/lib/dgmon
+Restart=on-failure
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dgmon
+# Create the data directory if it does not exist.
+StateDirectory=dgmon
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+{
+  "server_url": "http://127.0.0.1:9401/ingest",
+  "interval_secs": 3,
+  "mock": true,
+  "labels": {
+    "cluster": "dgx-spark-prod",
+    "rack": "r1",
+    "node_role": "worker"
+  }
+}

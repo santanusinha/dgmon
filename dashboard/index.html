@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dgmon — Cluster Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">dgmon<span class="dot">.</span></div>
+    <div class="spacer"></div>
+    <span id="node-count" class="badge">— nodes</span>
+    <span id="server-status" class="badge"><span class="pulse"></span>connecting</span>
+    <span id="refresh-time" class="badge">—</span>
+  </header>
+
+  <main class="wrap">
+
+    <section>
+      <div class="section-head">
+        <h2>Node</h2>
+        <span class="hint" id="sel-host">—</span>
+      </div>
+      <div id="node-bar" class="node-switch"></div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Host Overview</h2>
+        <span class="hint">selected node</span>
+      </div>
+      <div id="host-cards" class="stat-grid"></div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Telemetry</h2>
+        <span class="hint">last 60 min · 30s step</span>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="t"><span>CPU Usage</span><span class="now" id="now-cpu">—</span></div>
+          <div id="chart-cpu" class="cv"><canvas width="400" height="200"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="t"><span>Memory Used</span><span class="now" id="now-mem">—</span></div>
+          <div id="chart-mem" class="cv"><canvas width="400" height="200"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="t"><span>GPU Utilization</span><span class="now" id="now-gpu">—</span></div>
+          <div id="chart-gpu" class="cv"><canvas width="400" height="200"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="t"><span>GPU Temperature</span><span class="now" id="now-temp">—</span></div>
+          <div id="chart-temp" class="cv"><canvas width="400" height="200"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>GPUs</h2>
+        <span class="hint" id="gpu-count">—</span>
+      </div>
+      <div class="gpu-card">
+        <table class="gpu">
+          <thead>
+            <tr>
+              <th>#</th><th>Model</th><th>UUID</th><th>Util</th><th>Mem Util</th>
+              <th>Temp</th><th>Power</th><th>Fan</th>
+            </tr>
+          </thead>
+          <tbody id="gpu-table-body"></tbody>
+        </table>
+        <div id="gpu-empty" class="empty-note">No GPU data yet — waiting for first snapshot…</div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/chart.umd.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
