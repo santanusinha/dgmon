@@ -153,6 +153,9 @@ pub fn run(addr: &str, data_dir: Option<String>) -> anyhow::Result<()> {
     let addr_owned = addr.to_string();
     let sys = actix_rt::System::new();
 
+    // Clone tsink before the closure so it is available after the server stops.
+    let tsink_shutdown = server_state.http.tsink.clone();
+
     sys.block_on(async move {
         let server = HttpServer::new(move || {
             let cors = Cors::permissive();
@@ -183,7 +186,38 @@ pub fn run(addr: &str, data_dir: Option<String>) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("bind {addr_owned} failed: {e}"))?
         .run();
 
+        let handle = server.handle();
+
+        // Spawn a task that waits for SIGINT or SIGTERM, then stops the
+        // server gracefully so in-flight requests finish and tsink flushes.
+        actix_rt::spawn(async move {
+            use actix_rt::signal::unix::{signal, SignalKind};
+
+            let mut sigterm =
+                signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+            let mut sigint =
+                signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
+
+            tokio::select! {
+                _ = sigterm.recv() => tracing::info!("received SIGTERM, shutting down"),
+                _ = sigint.recv() => tracing::info!("received SIGINT, shutting down"),
+            }
+
+            handle.stop(true).await;
+        });
+
         tracing::info!("dgmon server listening on http://{addr_owned}");
-        server.await.map_err(|e| anyhow::anyhow!("server error: {e}"))
+        server.await.map_err(|e| anyhow::anyhow!("server error: {e}"))?;
+
+        // Server has stopped. Flush tsink so no in-memory data is lost.
+        if let Some(ref ts) = tsink_shutdown {
+            if let Err(e) = ts.close() {
+                tracing::warn!("tsink close failed: {e:#}");
+            } else {
+                tracing::info!("tsink storage flushed and closed");
+            }
+        }
+
+        Ok(())
     })
 }

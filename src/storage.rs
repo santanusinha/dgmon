@@ -223,4 +223,11 @@ impl TsinkStore {
     ) -> anyhow::Result<PromqlValue> {
         Ok(self.engine.range_query(query, start_ms, end_ms, step_ms)?)
     }
+
+    /// Flush and close the underlying tsink storage.
+    /// Call this during graceful shutdown to persist in-memory data.
+    pub fn close(&self) -> anyhow::Result<()> {
+        self.storage.close()?;
+        Ok(())
+    }
 }
