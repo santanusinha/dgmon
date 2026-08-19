@@ -483,11 +483,13 @@ pub async fn query(
 
 /// Convert a Prometheus metric name into a valid Prometheus metric name.
 /// Replaces characters that are not alphanumeric or underscore with
-/// underscores, and prefixes with `dgmon_inference_` to avoid collisions.
+/// underscores, strips a known engine prefix (`vllm:` or `sglang:`), and
+/// prefixes with `dgmon_inference_` to avoid collisions.
 fn sanitize_metric_name(name: &str) -> String {
-    let mut out = String::with_capacity(name.len() + 16);
+    let stripped = strip_engine_prefix(name);
+    let mut out = String::with_capacity(stripped.len() + 16);
     out.push_str("dgmon_inference_");
-    for c in name.chars() {
+    for c in stripped.chars() {
         if c.is_ascii_alphanumeric() || c == '_' {
             out.push(c);
         } else {
@@ -495,4 +497,15 @@ fn sanitize_metric_name(name: &str) -> String {
         }
     }
     out
+}
+
+/// Strip a known engine prefix (`vllm:` or `sglang:`) from a raw metric name.
+/// Returns the name unchanged when no engine prefix is present.
+fn strip_engine_prefix(name: &str) -> &str {
+    for prefix in ["vllm:", "sglang:"] {
+        if let Some(rest) = name.strip_prefix(prefix) {
+            return rest;
+        }
+    }
+    name
 }
