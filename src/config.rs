@@ -45,6 +45,16 @@ pub struct CollectorConfig {
     /// Extra labels attached to every snapshot from this node.
     #[serde(default)]
     pub labels: HashMap<String, String>,
+
+    /// Manual inference server targets. Each entry is a base URL like
+    /// `http://127.0.0.1:8000`. When set, discovery is skipped for these.
+    #[serde(default)]
+    pub inference_servers: Vec<String>,
+
+    /// Optional per-interface role overrides. Keys are interface names,
+    /// values are roles (main, cluster, other).
+    #[serde(default)]
+    pub interface_role_overrides: HashMap<String, String>,
 }
 
 fn default_interval() -> u64 {
@@ -59,6 +69,8 @@ impl Default for CollectorConfig {
             mock: false,
             hostname: None,
             labels: HashMap::new(),
+            inference_servers: Vec::new(),
+            interface_role_overrides: HashMap::new(),
         }
     }
 }

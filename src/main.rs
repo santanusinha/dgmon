@@ -18,6 +18,7 @@ mod collect;
 mod collector;
 mod config;
 mod http;
+mod inference;
 mod push;
 mod server;
 mod service;
@@ -70,6 +71,10 @@ enum Command {
         /// When omitted, the service keeps only the latest snapshot in memory.
         #[arg(long, env = "DGMON_DATA_DIR")]
         data_dir: Option<String>,
+
+        /// Path to the JSON config file (inference servers, interface roles).
+        #[arg(long, env = "DGMON_CONFIG")]
+        config: Option<String>,
     },
 
     /// Push agent: collect locally and push snapshots to a remote dgmon server.
@@ -111,9 +116,28 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Server { listen, data_dir } => server::run(&listen, data_dir),
 
-        Command::Service { listen, data_dir } => {
+        Command::Service {
+            listen,
+            data_dir,
+            config,
+        } => {
             let collector = make_collector(cli.mock);
-            service::run(collector, &listen, interval, data_dir)
+            // Load optional config for inference servers and interface roles.
+            let (inference_servers, interface_role_overrides) = match config {
+                Some(path) => {
+                    let cfg = config::CollectorConfig::load(std::path::Path::new(&path))?;
+                    (cfg.inference_servers, cfg.interface_role_overrides)
+                }
+                None => (Vec::new(), std::collections::HashMap::new()),
+            };
+            service::run(
+                collector,
+                &listen,
+                interval,
+                data_dir,
+                inference_servers,
+                interface_role_overrides,
+            )
         }
 
         Command::Push { config } => {

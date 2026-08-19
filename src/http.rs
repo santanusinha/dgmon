@@ -168,57 +168,98 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
     for snap in snaps {
         let host = &snap.host.hostname;
 
+        // Extra metadata labels merged into every metric.
+        let extra_labels: String = snap
+            .extra
+            .iter()
+            .map(|(k, v)| format!(",{k}=\"{v}\""))
+            .collect();
+
         out.push_str("# HELP dgmon_cpu_usage_pct CPU usage percentage\n");
         out.push_str(&format!(
-            "dgmon_cpu_usage_pct{{hostname=\"{}\"}} {:.1}\n",
+            "dgmon_cpu_usage_pct{{hostname=\"{}\"{extra_labels}}} {:.1}\n",
             host, snap.host.cpu_usage_pct
         ));
 
         out.push_str("# HELP dgmon_memory_used_mb Memory used in MiB\n");
         out.push_str(&format!(
-            "dgmon_memory_used_mb{{hostname=\"{}\"}} {}\n",
+            "dgmon_memory_used_mb{{hostname=\"{}\"{extra_labels}}} {}\n",
             host, snap.host.memory_used_mb
         ));
 
         out.push_str("# HELP dgmon_memory_total_mb Total memory in MiB\n");
         out.push_str(&format!(
-            "dgmon_memory_total_mb{{hostname=\"{}\"}} {}\n",
+            "dgmon_memory_total_mb{{hostname=\"{}\"{extra_labels}}} {}\n",
             host, snap.host.memory_total_mb
         ));
 
         out.push_str("# HELP dgmon_uptime_seconds Host uptime in seconds\n");
         out.push_str(&format!(
-            "dgmon_uptime_seconds{{hostname=\"{}\"}} {}\n",
+            "dgmon_uptime_seconds{{hostname=\"{}\"{extra_labels}}} {}\n",
             host, snap.host.uptime_seconds
         ));
 
         out.push_str("# HELP dgmon_disk_used_gb Disk space used in GB\n");
         out.push_str(&format!(
-            "dgmon_disk_used_gb{{hostname=\"{}\"}} {:.2}\n",
+            "dgmon_disk_used_gb{{hostname=\"{}\"{extra_labels}}} {:.2}\n",
             host, snap.host.disk_used_gb
         ));
 
         out.push_str("# HELP dgmon_disk_total_gb Total disk space in GB\n");
         out.push_str(&format!(
-            "dgmon_disk_total_gb{{hostname=\"{}\"}} {:.2}\n",
+            "dgmon_disk_total_gb{{hostname=\"{}\"{extra_labels}}} {:.2}\n",
             host, snap.host.disk_total_gb
         ));
 
         out.push_str("# HELP dgmon_network_rx_bytes Network bytes received\n");
         out.push_str(&format!(
-            "dgmon_network_rx_bytes{{hostname=\"{}\"}} {}\n",
+            "dgmon_network_rx_bytes{{hostname=\"{}\"{extra_labels}}} {}\n",
             host, snap.host.network_rx_bytes
         ));
 
         out.push_str("# HELP dgmon_network_tx_bytes Network bytes transmitted\n");
         out.push_str(&format!(
-            "dgmon_network_tx_bytes{{hostname=\"{}\"}} {}\n",
+            "dgmon_network_tx_bytes{{hostname=\"{}\"{extra_labels}}} {}\n",
             host, snap.host.network_tx_bytes
         ));
 
+        // Per-CPU-core utilization.
+        for core in &snap.host.cpu_cores {
+            out.push_str("# HELP dgmon_cpu_core_usage_pct Per-CPU-core utilization percentage\n");
+            out.push_str(&format!(
+                "dgmon_cpu_core_usage_pct{{hostname=\"{}\",core=\"{}\"{extra_labels}}} {:.1}\n",
+                host, core.index, core.usage_pct
+            ));
+        }
+
+        // Per-interface network utilization.
+        for net in &snap.host.networks {
+            let net_labels = format!(
+                "hostname=\"{}\",interface=\"{}\",role=\"{}\"{extra_labels}",
+                host, net.interface, net.role
+            );
+            out.push_str("# HELP dgmon_net_rx_bytes Per-interface bytes received\n");
+            out.push_str(&format!("dgmon_net_rx_bytes{{{net_labels}}} {}\n", net.rx_bytes));
+            out.push_str("# HELP dgmon_net_tx_bytes Per-interface bytes transmitted\n");
+            out.push_str(&format!("dgmon_net_tx_bytes{{{net_labels}}} {}\n", net.tx_bytes));
+            out.push_str("# HELP dgmon_net_rx_packets Per-interface packets received\n");
+            out.push_str(&format!("dgmon_net_rx_packets{{{net_labels}}} {}\n", net.rx_packets));
+            out.push_str("# HELP dgmon_net_tx_packets Per-interface packets transmitted\n");
+            out.push_str(&format!("dgmon_net_tx_packets{{{net_labels}}} {}\n", net.tx_packets));
+            if let Some(speed) = net.speed_mbps {
+                out.push_str("# HELP dgmon_net_speed_mbps Per-interface link speed in Mbps\n");
+                out.push_str(&format!("dgmon_net_speed_mbps{{{net_labels}}} {speed}\n"));
+            }
+            out.push_str("# HELP dgmon_net_up Per-interface link up state\n");
+            out.push_str(&format!(
+                "dgmon_net_up{{{net_labels}}} {}\n",
+                if net.up { 1 } else { 0 }
+            ));
+        }
+
         for g in &snap.gpus {
             let labels = format!(
-                "hostname=\"{}\",gpu=\"{}\",uuid=\"{}\",model=\"{}\"",
+                "hostname=\"{}\",gpu=\"{}\",uuid=\"{}\",model=\"{}\"{extra_labels}",
                 host, g.index, g.uuid, g.name
             );
 
@@ -257,6 +298,56 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
             if let Some(fan) = g.fan_speed_pct {
                 out.push_str("# HELP dgmon_gpu_fan_speed_pct GPU fan speed percentage\n");
                 out.push_str(&format!("dgmon_gpu_fan_speed_pct{{{labels}}} {fan}\n"));
+            }
+
+            // New granular GPU metrics.
+            if let Some(v) = g.sm_clock_mhz {
+                out.push_str("# HELP dgmon_gpu_sm_clock_mhz GPU SM clock in MHz\n");
+                out.push_str(&format!("dgmon_gpu_sm_clock_mhz{{{labels}}} {v}\n"));
+            }
+            if let Some(v) = g.mem_clock_mhz {
+                out.push_str("# HELP dgmon_gpu_mem_clock_mhz GPU memory clock in MHz\n");
+                out.push_str(&format!("dgmon_gpu_mem_clock_mhz{{{labels}}} {v}\n"));
+            }
+            if let Some(v) = g.sm_clock_max_mhz {
+                out.push_str("# HELP dgmon_gpu_sm_clock_max_mhz GPU max SM clock in MHz\n");
+                out.push_str(&format!("dgmon_gpu_sm_clock_max_mhz{{{labels}}} {v}\n"));
+            }
+            if let Some(v) = g.mem_clock_max_mhz {
+                out.push_str("# HELP dgmon_gpu_mem_clock_max_mhz GPU max memory clock in MHz\n");
+                out.push_str(&format!("dgmon_gpu_mem_clock_max_mhz{{{labels}}} {v}\n"));
+            }
+            if let Some(v) = g.mem_temp_c {
+                out.push_str("# HELP dgmon_gpu_mem_temp_c GPU memory temperature in Celsius\n");
+                out.push_str(&format!("dgmon_gpu_mem_temp_c{{{labels}}} {v}\n"));
+            }
+            if let Some(v) = g.pcie_link_gen {
+                out.push_str("# HELP dgmon_gpu_pcie_link_gen Current PCIe link generation\n");
+                out.push_str(&format!("dgmon_gpu_pcie_link_gen{{{labels}}} {v}\n"));
+            }
+            if let Some(v) = g.pcie_link_gen_max {
+                out.push_str("# HELP dgmon_gpu_pcie_link_gen_max Max PCIe link generation\n");
+                out.push_str(&format!("dgmon_gpu_pcie_link_gen_max{{{labels}}} {v}\n"));
+            }
+            if let Some(v) = g.pcie_link_width {
+                out.push_str("# HELP dgmon_gpu_pcie_link_width Current PCIe link width in lanes\n");
+                out.push_str(&format!("dgmon_gpu_pcie_link_width{{{labels}}} {v}\n"));
+            }
+            if let Some(v) = g.pcie_link_width_max {
+                out.push_str("# HELP dgmon_gpu_pcie_link_width_max Max PCIe link width in lanes\n");
+                out.push_str(&format!("dgmon_gpu_pcie_link_width_max{{{labels}}} {v}\n"));
+            }
+        }
+
+        // Inference metrics.
+        for inf in &snap.inference {
+            let inf_labels = format!(
+                "hostname=\"{}\",engine=\"{}\",model_name=\"{}\"{extra_labels}",
+                host, inf.engine, inf.model_name
+            );
+            for (name, value) in &inf.metrics {
+                let metric = sanitize_metric_name(name);
+                out.push_str(&format!("{metric}{{{inf_labels}}} {value}\n"));
             }
         }
     }
@@ -388,4 +479,20 @@ pub async fn query(
             .content_type("application/json")
             .body(format!("{{\"error\":\"{e}\"}}")),
     }
+}
+
+/// Convert a Prometheus metric name into a valid Prometheus metric name.
+/// Replaces characters that are not alphanumeric or underscore with
+/// underscores, and prefixes with `dgmon_inference_` to avoid collisions.
+fn sanitize_metric_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 16);
+    out.push_str("dgmon_inference_");
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            out.push(c);
+        } else {
+            out.push('_');
+        }
+    }
+    out
 }

@@ -227,7 +227,7 @@ pub async fn metric_latest(
     let name = path.into_inner();
     let now = chrono::Utc::now().timestamp_millis();
     // Look back 1 hour for the latest value.
-    let start = now - 3600_000;
+    let start = now - 3_600_000;
     match ts.query_all(&name, start, now) {
         Ok(series) => {
             let latest: Vec<MetricSeries> = series

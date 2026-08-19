@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::process::Command;
 
-use super::{Collector, GpuSample, HostSample, Snapshot};
+use super::{Collector, CpuCoreSample, GpuSample, HostSample, NetSample, Snapshot};
 
 pub struct NvidiaSmiCollector {
     hostname: String,
@@ -40,7 +40,7 @@ impl Default for NvidiaSmiCollector {
 }
 
 /// CSV columns we request from nvidia-smi, in order.
-const QUERY: &str = "index,uuid,name,utilization.gpu,utilization.memory,temperature.gpu,power.draw,power.limit,memory.used,memory.total,fan.speed,pstate";
+const QUERY: &str = "index,uuid,name,utilization.gpu,utilization.memory,temperature.gpu,power.draw,power.limit,memory.used,memory.total,fan.speed,pstate,clocks.sm,clocks.mem,clocks.max.sm,clocks.max.mem,temperature.memory,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max";
 
 fn parse_u32(s: &str) -> u32 {
     s.trim().parse::<u32>().unwrap_or(0)
@@ -92,7 +92,7 @@ impl Collector for NvidiaSmiCollector {
 
         for line in stdout.lines() {
             let cols: Vec<&str> = line.split(", ").collect();
-            if cols.len() < 12 {
+            if cols.len() < 20 {
                 continue;
             }
 
@@ -109,6 +109,15 @@ impl Collector for NvidiaSmiCollector {
                 memory_total_mb: parse_opt_u64(cols[9]),
                 fan_speed_pct: parse_opt_u32(cols[10]),
                 pstate: cols[11].trim().to_string(),
+                sm_clock_mhz: parse_opt_u32(cols[12]),
+                mem_clock_mhz: parse_opt_u32(cols[13]),
+                sm_clock_max_mhz: parse_opt_u32(cols[14]),
+                mem_clock_max_mhz: parse_opt_u32(cols[15]),
+                mem_temp_c: parse_opt_u32(cols[16]),
+                pcie_link_gen: parse_opt_u32(cols[17]),
+                pcie_link_gen_max: parse_opt_u32(cols[18]),
+                pcie_link_width: parse_opt_u32(cols[19]),
+                pcie_link_width_max: parse_opt_u32(cols[20]),
             });
         }
 
@@ -124,6 +133,7 @@ impl Collector for NvidiaSmiCollector {
             timestamp: chrono::Utc::now(),
             host,
             gpus,
+            inference: Vec::new(),
             extra: HashMap::new(),
         })
     }
@@ -155,6 +165,32 @@ impl NvidiaSmiCollector {
             (rx, tx)
         };
 
+        // Per-CPU-core utilization.
+        let cpu_cores = sys
+            .cpus()
+            .iter()
+            .enumerate()
+            .map(|(i, c)| CpuCoreSample {
+                index: i as u32,
+                usage_pct: c.cpu_usage(),
+            })
+            .collect();
+
+        // Per-interface network utilization.
+        let networks = nets
+            .iter()
+            .map(|(name, data)| NetSample {
+                interface: name.clone(),
+                role: detect_role(name).to_string(),
+                rx_bytes: data.total_received(),
+                tx_bytes: data.total_transmitted(),
+                rx_packets: data.total_packets_received(),
+                tx_packets: data.total_packets_transmitted(),
+                speed_mbps: None,
+                up: true,
+            })
+            .collect();
+
         HostSample {
             hostname: self.hostname.clone(),
             cpu_usage_pct: cpu_usage,
@@ -165,6 +201,26 @@ impl NvidiaSmiCollector {
             network_rx_bytes: rx,
             network_tx_bytes: tx,
             uptime_seconds: sysinfo::System::uptime(),
+            cpu_cores,
+            networks,
         }
+    }
+}
+
+/// Auto-detect the role of a network interface from its name.
+/// DGX Spark naming patterns:
+/// - cluster: ConnectX-7 interfaces like enp1s0f0np0, enP2p1s0f0np0.
+/// - main: onboard ethernet like eth0, enP7s7, eno, ens.
+fn detect_role(name: &str) -> &'static str {
+    if name.starts_with("enp1s0f") || name.starts_with("enP2p1s0f") {
+        "cluster"
+    } else if name.starts_with("eth")
+        || name.starts_with("enP7s7")
+        || name.starts_with("eno")
+        || name.starts_with("ens")
+    {
+        "main"
+    } else {
+        "other"
     }
 }

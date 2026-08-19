@@ -40,61 +40,116 @@ impl TsinkStore {
     }
 
     /// Write all metrics from a snapshot into tsink.
+    /// Write all metrics from a snapshot into tsink.
     pub fn write_snapshot(&self, snap: &Snapshot) -> anyhow::Result<()> {
         let ts = snap.timestamp.timestamp_millis();
         let host = &snap.host.hostname;
         let mut rows = Vec::new();
 
+        // Base labels for every row: hostname plus extra metadata labels.
+        let mut base_labels = vec![Label::new("hostname", host)];
+        for (k, v) in &snap.extra {
+            base_labels.push(Label::new(k, v));
+        }
+
         // Host-level metrics.
         rows.push(Row::with_labels(
             "dgmon_cpu_usage_pct",
-            vec![Label::new("hostname", host)],
+            base_labels.clone(),
             DataPoint::new(ts, snap.host.cpu_usage_pct as f64),
         ));
         rows.push(Row::with_labels(
             "dgmon_memory_used_mb",
-            vec![Label::new("hostname", host)],
+            base_labels.clone(),
             DataPoint::new(ts, snap.host.memory_used_mb as f64),
         ));
         rows.push(Row::with_labels(
             "dgmon_memory_total_mb",
-            vec![Label::new("hostname", host)],
+            base_labels.clone(),
             DataPoint::new(ts, snap.host.memory_total_mb as f64),
         ));
         rows.push(Row::with_labels(
             "dgmon_uptime_seconds",
-            vec![Label::new("hostname", host)],
+            base_labels.clone(),
             DataPoint::new(ts, snap.host.uptime_seconds as f64),
         ));
         rows.push(Row::with_labels(
             "dgmon_disk_used_gb",
-            vec![Label::new("hostname", host)],
+            base_labels.clone(),
             DataPoint::new(ts, snap.host.disk_used_gb),
         ));
         rows.push(Row::with_labels(
             "dgmon_disk_total_gb",
-            vec![Label::new("hostname", host)],
+            base_labels.clone(),
             DataPoint::new(ts, snap.host.disk_total_gb),
         ));
         rows.push(Row::with_labels(
             "dgmon_network_rx_bytes",
-            vec![Label::new("hostname", host)],
+            base_labels.clone(),
             DataPoint::new(ts, snap.host.network_rx_bytes as f64),
         ));
         rows.push(Row::with_labels(
             "dgmon_network_tx_bytes",
-            vec![Label::new("hostname", host)],
+            base_labels.clone(),
             DataPoint::new(ts, snap.host.network_tx_bytes as f64),
         ));
 
+        // Per-CPU-core utilization.
+        for core in &snap.host.cpu_cores {
+            let mut labels = base_labels.clone();
+            labels.push(Label::new("core", core.index.to_string()));
+            rows.push(Row::with_labels(
+                "dgmon_cpu_core_usage_pct",
+                labels,
+                DataPoint::new(ts, core.usage_pct as f64),
+            ));
+        }
+
+        // Per-interface network utilization.
+        for net in &snap.host.networks {
+            let mut labels = base_labels.clone();
+            labels.push(Label::new("interface", &net.interface));
+            labels.push(Label::new("role", &net.role));
+            rows.push(Row::with_labels(
+                "dgmon_net_rx_bytes",
+                labels.clone(),
+                DataPoint::new(ts, net.rx_bytes as f64),
+            ));
+            rows.push(Row::with_labels(
+                "dgmon_net_tx_bytes",
+                labels.clone(),
+                DataPoint::new(ts, net.tx_bytes as f64),
+            ));
+            rows.push(Row::with_labels(
+                "dgmon_net_rx_packets",
+                labels.clone(),
+                DataPoint::new(ts, net.rx_packets as f64),
+            ));
+            rows.push(Row::with_labels(
+                "dgmon_net_tx_packets",
+                labels.clone(),
+                DataPoint::new(ts, net.tx_packets as f64),
+            ));
+            if let Some(speed) = net.speed_mbps {
+                rows.push(Row::with_labels(
+                    "dgmon_net_speed_mbps",
+                    labels.clone(),
+                    DataPoint::new(ts, speed as f64),
+                ));
+            }
+            rows.push(Row::with_labels(
+                "dgmon_net_up",
+                labels,
+                DataPoint::new(ts, if net.up { 1.0 } else { 0.0 }),
+            ));
+        }
+
         // GPU-level metrics.
         for g in &snap.gpus {
-            let labels = vec![
-                Label::new("hostname", host),
-                Label::new("gpu", &g.index.to_string()),
-                Label::new("uuid", &g.uuid),
-                Label::new("model", &g.name),
-            ];
+            let mut labels = base_labels.clone();
+            labels.push(Label::new("gpu", g.index.to_string()));
+            labels.push(Label::new("uuid", &g.uuid));
+            labels.push(Label::new("model", &g.name));
 
             rows.push(Row::with_labels(
                 "dgmon_gpu_utilization",
@@ -145,6 +200,87 @@ impl TsinkStore {
                     "dgmon_gpu_fan_speed_pct",
                     labels.clone(),
                     DataPoint::new(ts, fan as f64),
+                ));
+            }
+
+            // New granular GPU metrics.
+            if let Some(v) = g.sm_clock_mhz {
+                rows.push(Row::with_labels(
+                    "dgmon_gpu_sm_clock_mhz",
+                    labels.clone(),
+                    DataPoint::new(ts, v as f64),
+                ));
+            }
+            if let Some(v) = g.mem_clock_mhz {
+                rows.push(Row::with_labels(
+                    "dgmon_gpu_mem_clock_mhz",
+                    labels.clone(),
+                    DataPoint::new(ts, v as f64),
+                ));
+            }
+            if let Some(v) = g.sm_clock_max_mhz {
+                rows.push(Row::with_labels(
+                    "dgmon_gpu_sm_clock_max_mhz",
+                    labels.clone(),
+                    DataPoint::new(ts, v as f64),
+                ));
+            }
+            if let Some(v) = g.mem_clock_max_mhz {
+                rows.push(Row::with_labels(
+                    "dgmon_gpu_mem_clock_max_mhz",
+                    labels.clone(),
+                    DataPoint::new(ts, v as f64),
+                ));
+            }
+            if let Some(v) = g.mem_temp_c {
+                rows.push(Row::with_labels(
+                    "dgmon_gpu_mem_temp_c",
+                    labels.clone(),
+                    DataPoint::new(ts, v as f64),
+                ));
+            }
+            if let Some(v) = g.pcie_link_gen {
+                rows.push(Row::with_labels(
+                    "dgmon_gpu_pcie_link_gen",
+                    labels.clone(),
+                    DataPoint::new(ts, v as f64),
+                ));
+            }
+            if let Some(v) = g.pcie_link_gen_max {
+                rows.push(Row::with_labels(
+                    "dgmon_gpu_pcie_link_gen_max",
+                    labels.clone(),
+                    DataPoint::new(ts, v as f64),
+                ));
+            }
+            if let Some(v) = g.pcie_link_width {
+                rows.push(Row::with_labels(
+                    "dgmon_gpu_pcie_link_width",
+                    labels.clone(),
+                    DataPoint::new(ts, v as f64),
+                ));
+            }
+            if let Some(v) = g.pcie_link_width_max {
+                rows.push(Row::with_labels(
+                    "dgmon_gpu_pcie_link_width_max",
+                    labels.clone(),
+                    DataPoint::new(ts, v as f64),
+                ));
+            }
+        }
+
+        // Inference metrics.
+        for inf in &snap.inference {
+            let mut labels = base_labels.clone();
+            labels.push(Label::new("engine", &inf.engine));
+            labels.push(Label::new("model_name", &inf.model_name));
+            for (name, value) in &inf.metrics {
+                // Sanitize the metric name into a valid Prometheus name.
+                let metric = sanitize_metric_name(name);
+                rows.push(Row::with_labels(
+                    &metric,
+                    labels.clone(),
+                    DataPoint::new(ts, *value),
                 ));
             }
         }
@@ -230,4 +366,20 @@ impl TsinkStore {
         self.storage.close()?;
         Ok(())
     }
+}
+
+/// Convert a Prometheus metric name into a valid tsink metric name.
+/// Replaces characters that are not alphanumeric or underscore with
+/// underscores, and prefixes with `dgmon_inference_` to avoid collisions.
+fn sanitize_metric_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 16);
+    out.push_str("dgmon_inference_");
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            out.push(c);
+        } else {
+            out.push('_');
+        }
+    }
+    out
 }

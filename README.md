@@ -57,7 +57,7 @@ flag or an environment variable.
 | `--interval <secs>` | `DGMON_INTERVAL` | `5` | `push`, `service`, `loop` | How often to collect a snapshot, in seconds. |
 | `--listen <addr>` | `DGMON_LISTEN` | `0.0.0.0:9401` | `server`, `service` | Address and port to bind the HTTP server to. |
 | `--data-dir <path>` | `DGMON_DATA_DIR` | (none) | `server`, `service` | Enable time-series storage at this path. Adds `/history`, `/query`, and `/metrics/list`. |
-| `--config <file>` | `DGMON_CONFIG` | (none) | `push` | Path to the push agent JSON config file. |
+| `--config <file>` | `DGMON_CONFIG` | (none) | `push`, `service` | Path to the JSON config file (inference servers, interface roles). |
 
 ### Examples
 
@@ -87,6 +87,10 @@ Each push agent reads a JSON config file:
   "labels": {
     "cluster": "dgx-spark-prod",
     "rack": "r1"
+  },
+  "inference_servers": ["http://127.0.0.1:8000"],
+  "interface_role_overrides": {
+    "enp1s0f0np0": "cluster"
   }
 }
 ```
@@ -97,7 +101,8 @@ Each push agent reads a JSON config file:
 | `interval_secs` | `5` | Push interval in seconds. |
 | `mock` | `false` | Use the mock collector instead of `nvidia-smi`. |
 | `labels` | `{}` | Extra labels merged into every snapshot from this node. |
-
+| `inference_servers` | `[]` | Manual inference server base URLs (e.g. `http://127.0.0.1:8000`). When set, discovery is skipped for these. |
+| `interface_role_overrides` | `{}` | Optional per-interface role overrides. Keys are interface names, values are roles (`main`, `cluster`, `other`). |
 See `examples/dgmon-push.json` for a complete example.
 
 ## Server endpoints
@@ -217,9 +222,44 @@ cargo build --release
 Each snapshot contains:
 
 - **Host**: hostname, CPU usage, memory, disk, network counters, uptime.
+- **CPU cores** (per core): utilization percentage.
+- **Network interfaces** (per interface): role (main/cluster/other), bytes
+  and packets received/transmitted, link speed, up state.
 - **GPU** (per device): index, UUID, model name, GPU utilization, memory
-  utilization, temperature, power draw, power limit, memory used/total, fan
-  speed, P-state, XID error count.
+  utilization, temperature, memory temperature, power draw, power limit,
+  memory used/total, fan speed, P-state, SM clock, memory clock, max clocks,
+  PCIe link generation and width.
+- **Inference** (per engine): scraped Prometheus metrics from sglang and
+  vLLM, tagged with the engine and model name.
+
+### Inference metrics
+
+The push agent (and service mode) discovers local inference servers and
+scrapes their `/metrics` endpoint. Discovery order:
+
+1. Manual config targets (`inference_servers` in the config file).
+2. Docker containers (bollard) running sglang or vLLM images.
+3. Process table (sysinfo) for sglang/vLLM processes.
+4. `netstat` output as a last resort.
+
+Each discovered server is scraped for `/metrics` and the model name is
+fetched from the `/v1/models` API. All metrics are captured and stored with
+`engine` and `model_name` labels. If no inference server is found, the
+snapshot contains no inference metrics and does not fail.
+
+### Metadata labels
+
+Every metric carries the `hostname` label plus any `extra` labels from the
+config (e.g. `cluster`, `rack`, `node_role`). Inference metrics also carry
+`engine` and `model_name`. This lets you filter in PromQL:
+
+```promql
+# All GPU utilization for the production cluster
+{dgmon_gpu_utilization}{cluster="dgx-spark-prod"}
+
+# Generation tokens for a specific model
+rate(dgmon_inference_generation_tokens_total{model_name="llama-3-8b"}[5m])
+```
 
 ## Project layout
 
@@ -231,11 +271,12 @@ src/
   collector/
     nvidia.rs     — NvidiaSmiCollector (nvidia-smi CSV)
     mock.rs       — MockCollector (fake data)
-  push.rs         — Push agent: collect + POST to server
+  inference.rs    — Inference discovery + scraping (sglang/vLLM)
+  push.rs         — Push agent: async collect + POST to server
   server.rs       — Aggregation server: receive pushes, expose /metrics
   service.rs      — Standalone single-node service
   http.rs         — Shared actix-web handlers (dashboard, static, health, history, query)
-  storage.rs      — TsinkStore wrapper (optional time-series storage)
+  storage.rs      — TsinkStore wrapper (time-series storage)
   collect.rs      — CLI collector: once / loop
 ```
 

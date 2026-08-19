@@ -12,18 +12,21 @@ Push-based cluster monitoring:
 
 # Source layout
 - `src/main.rs` — CLI entry point (clap), mode dispatch
-- `src/config.rs` — Push agent JSON config (server_url, interval, labels, mock)
-- `src/collector.rs` — Collector trait + data structs (Snapshot, GpuSample, HostSample)
-- `src/collector/nvidia.rs` — NvidiaSmiCollector (reads nvidia-smi CSV)
+- `src/config.rs` — Push agent JSON config (server_url, interval, labels, mock, inference_servers, interface_role_overrides)
+- `src/collector.rs` — Collector trait + data structs (Snapshot, GpuSample, HostSample, CpuCoreSample, NetSample, InferenceSample)
+- `src/collector/nvidia.rs` — NvidiaSmiCollector (reads nvidia-smi CSV, per-CPU-core, per-interface network)
 - `src/collector/mock.rs` — MockCollector (fake data for testing)
-- `src/push.rs` — Push agent: collect loop + HTTP POST to server
+- `src/inference.rs` — Inference discovery + scraping (sglang/vLLM)
+- `src/push.rs` — Push agent: async collect loop + HTTP POST to server
 - `src/server.rs` — Aggregation server: /ingest, /metrics, /snapshot, /nodes, /history, /query, /metrics/list, /health
 - `src/service.rs` — Standalone single-node service: /snapshot, /nodes, /metrics, /history, /query, /metrics/list, /health
 - `src/api.rs` — Versioned REST API under /api/v1/ (nodes, gpus, metrics)
 - `src/http.rs` — Shared actix-web handlers (dashboard, static, health, history, query, metrics/list)
+- `src/storage.rs` — TsinkStore wrapper (time-series storage)
+- `src/collect.rs` — CLI collector: once / loop
 
-# Time-series storage (optional)
-- When the server starts with `--data-dir <path>`, every ingested snapshot
+# Time-series storage
+- When the server or service starts with `--data-dir <path>`, every snapshot
   is written to a tsink embedded time-series database at that path.
 - The tsink database stores full history with a 30-day retention window.
 - Without `--data-dir`, the server and service operate in memory-only mode and store
@@ -56,20 +59,30 @@ Push-based cluster monitoring:
   This scales better for large clusters — the server does not need to know
   every node's address.
 - The collector agent config is a simple JSON file with server_url, interval,
-  mock flag, and custom labels (cluster, rack, etc.).
+  mock flag, custom labels (cluster, rack, etc.), inference servers, and
+  interface role overrides.
 - The server stores the latest snapshot per node in a HashMap keyed by hostname.
   Prometheus scrapes one endpoint to get all nodes.
 - No link-time dependency on libnvidia-ml; NVIDIA collector shells out to
   nvidia-smi and parses CSV. Binary runs on any DGX with the driver installed.
 - The Collector trait is the vendor abstraction. New GPU vendors implement
   it in a new module under src/collector/. No server or push changes needed.
+- The push agent and service mode use an async tokio runtime (reqwest) to
+  keep system load low. Collection stays blocking and runs on a blocking task.
+- Inference discovery: bollard (docker inspect) → process table → netstat →
+  manual config. Re-run periodically. Capture all metrics with engine and
+  model_name labels.
+- Metadata (hostname, cluster, rack, model_name) is stored as labels on every
+  metric for filtering in PromQL.
 
 # Dependencies (kept minimal)
 - clap (CLI + env var support)
 - serde / serde_json (serialization)
 - actix-web / actix-rt (async HTTP server)
-- ureq (HTTP client for push mode)
-- sysinfo (host metrics: CPU, memory, disk, network)
+- tokio (async runtime)
+- reqwest (async HTTP client for push + inference scraping)
+- bollard (Docker API client for inference discovery)
+- sysinfo (host metrics: CPU, memory, disk, network, per-core, per-interface)
 - chrono (timestamps)
 - tracing / tracing-subscriber (structured logging)
 - anyhow (error handling)
