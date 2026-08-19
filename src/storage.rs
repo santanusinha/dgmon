@@ -291,6 +291,10 @@ impl TsinkStore {
 
     /// Query historical data points for a metric within a time range.
     /// Returns (timestamp_millis, value) pairs.
+    ///
+    /// Uses partial label matching: only the `hostname` label is required.
+    /// This matches all series for the host, regardless of their other
+    /// labels (gpu, core, interface, engine, model_name, etc.).
     pub fn query(
         &self,
         metric: &str,
@@ -298,14 +302,25 @@ impl TsinkStore {
         start_ms: i64,
         end_ms: i64,
     ) -> anyhow::Result<Vec<(i64, f64)>> {
-        let labels = vec![Label::new("hostname", hostname)];
-        let points = self
-            .storage
-            .select(metric, &labels, start_ms, end_ms)?;
-        Ok(points
-            .iter()
-            .filter_map(|p| p.value_as_f64().map(|v| (p.timestamp, v)))
-            .collect())
+        let selection = tsink::SeriesSelection::new()
+            .with_metric(metric)
+            .with_matcher(tsink::SeriesMatcher::equal("hostname", hostname))
+            .with_time_range(start_ms, end_ms);
+        let series = self.storage.select_series(&selection)?;
+
+        let mut out = Vec::new();
+        for s in &series {
+            let points = self
+                .storage
+                .select(&s.name, &s.labels, start_ms, end_ms)?;
+            for p in &points {
+                if let Some(v) = p.value_as_f64() {
+                    out.push((p.timestamp, v));
+                }
+            }
+        }
+        out.sort_by_key(|(ts, _)| *ts);
+        Ok(out)
     }
 
     /// List all metric names stored in tsink.

@@ -106,11 +106,16 @@ async fn scrape_target(
 
     let metrics = parse_prometheus_text(&body);
 
+    // Detect the engine from the scraped metric content. vLLM exposes
+    // metrics prefixed with `vllm:`, sglang with `sglang:`. Fall back to
+    // the URL-based detection when the content is ambiguous.
+    let engine = detect_engine_from_content(&body, &target.engine);
+
     // Get the model name from the OpenAI-compatible /v1/models endpoint.
     let model_name = fetch_model_name(client, &target.base_url).await;
 
     Ok(InferenceSample {
-        engine: target.engine.clone(),
+        engine,
         model_name,
         metrics,
     })
@@ -310,6 +315,21 @@ fn detect_engine_from_url(url: &str) -> String {
         "vllm".into()
     } else {
         "sglang".into()
+    }
+}
+
+/// Detect the engine from the scraped `/metrics` content.
+///
+/// vLLM exposes metrics prefixed with `vllm:`, sglang with `sglang:`.
+/// When neither prefix is present, fall back to the URL-based detection.
+fn detect_engine_from_content(body: &str, fallback: &str) -> String {
+    let lower = body.to_lowercase();
+    if lower.contains("vllm:") {
+        "vllm".into()
+    } else if lower.contains("sglang:") {
+        "sglang".into()
+    } else {
+        fallback.to_string()
     }
 }
 
