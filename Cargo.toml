@@ -18,7 +18,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tsink = "0.10.2"
 actix-cors = "0.7"
 tokio = { version = "1", features = ["signal", "sync", "macros", "rt-multi-thread", "time", "net", "io-util"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+	reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 bollard = "0.17"
 
 [profile.release]

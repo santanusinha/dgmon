@@ -145,8 +145,8 @@ impl NvidiaSmiCollector {
 
         let sys = self.sys.lock().unwrap();
         let cpu_usage = sys.global_cpu_usage();
-        let mem_used = sys.used_memory() / 1024; // bytes → KiB
-        let mem_total = sys.total_memory() / 1024;
+        let mem_used = sys.used_memory() / 1024 / 1024; // bytes → MiB
+        let mem_total = sys.total_memory() / 1024 / 1024;
 
         let (disk_used, disk_total) = {
             let disks = Disks::new_with_refreshed_list();
