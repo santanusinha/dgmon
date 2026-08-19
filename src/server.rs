@@ -17,6 +17,7 @@ use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use crate::api::{self, ApiState, SnapshotSource};
 use crate::collector::Snapshot;
 use crate::http::{self, AppState};
+use crate::promapi::PromState;
 use crate::storage::TsinkStore;
 
 /// Multi-node in-memory store of the latest snapshot per host.
@@ -167,6 +168,9 @@ pub fn run(addr: &str, data_dir: Option<String>) -> anyhow::Result<()> {
                     tsink: server_state.http.tsink.clone(),
                 }))
                 .configure(api::configure)
+                .app_data(web::Data::new(PromState {
+                    tsink: server_state.http.tsink.clone(),
+                }))
                 .route("/", web::get().to(http::index))
                 .route("/dashboard", web::get().to(http::dashboard))
                 .route("/static/style.css", web::get().to(http::style_css))

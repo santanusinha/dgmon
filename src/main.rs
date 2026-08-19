@@ -19,6 +19,7 @@ mod collector;
 mod config;
 mod http;
 mod inference;
+mod promapi;
 mod push;
 mod server;
 mod service;

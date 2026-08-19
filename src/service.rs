@@ -14,6 +14,7 @@ use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use crate::api::{self, ApiState, SnapshotSource};
 use crate::collector::{Collector, Snapshot};
 use crate::http::{self, AppState};
+use crate::promapi::PromState;
 use crate::inference::collect_inference;
 use crate::storage::TsinkStore;
 
@@ -123,6 +124,9 @@ pub fn run(
                     tsink: service_state.http.tsink.clone(),
                 }))
                 .configure(api::configure)
+                .app_data(web::Data::new(PromState {
+                    tsink: service_state.http.tsink.clone(),
+                }))
                 .route("/", web::get().to(http::index))
                 .route("/dashboard", web::get().to(http::dashboard))
                 .route("/static/style.css", web::get().to(http::style_css))

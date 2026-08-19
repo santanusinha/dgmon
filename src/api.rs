@@ -22,6 +22,7 @@ use actix_web::{web, HttpResponse, Responder};
 use serde::Serialize;
 
 use crate::collector::{GpuSample, Snapshot};
+use crate::promapi;
 use crate::storage::TsinkStore;
 
 /// A node summary for the `/api/v1/nodes` listing.
@@ -340,6 +341,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/nodes/{hostname}/gpus/{index}", web::get().to(node_gpu))
             .route("/metrics", web::get().to(metrics))
             .route("/metrics/{name}", web::get().to(metric_latest))
-            .route("/metrics/{name}/history", web::get().to(metric_history)),
+            .route("/metrics/{name}/history", web::get().to(metric_history))
+            // Prometheus-compatible API routes share the same /api/v1 scope.
+            .configure(promapi::configure),
     );
 }
