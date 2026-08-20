@@ -29,8 +29,9 @@ pub struct PromResponse {
 
 #[derive(Serialize)]
 pub struct PromData {
+    #[serde(rename = "resultType")]
     pub result_type: &'static str,
-    pub result: Vec<PromResult>,
+    pub result: serde_json::Value,
 }
 
 /// A single result item in a Prometheus query response.
@@ -106,33 +107,19 @@ fn promql_to_prom(val: &PromqlValue) -> PromData {
     match val {
         PromqlValue::InstantVector(samples) => PromData {
             result_type: "vector",
-            result: samples.iter().map(sample_to_prom).collect(),
+            result: serde_json::json!(samples.iter().map(sample_to_prom).collect::<Vec<_>>()),
         },
         PromqlValue::RangeVector(series) => PromData {
             result_type: "matrix",
-            result: series.iter().map(series_to_prom).collect(),
+            result: serde_json::json!(series.iter().map(series_to_prom).collect::<Vec<_>>()),
         },
         PromqlValue::Scalar(v, t) => PromData {
             result_type: "scalar",
-            result: vec![PromResult {
-                metric: BTreeMap::new(),
-                value: Some(vec![
-                    serde_json::json!(*t as f64 / 1000.0),
-                    serde_json::json!(v.to_string()),
-                ]),
-                values: None,
-            }],
+            result: serde_json::json!([*t as f64 / 1000.0, v.to_string()]),
         },
         PromqlValue::String(s, t) => PromData {
             result_type: "string",
-            result: vec![PromResult {
-                metric: BTreeMap::new(),
-                value: Some(vec![
-                    serde_json::json!(*t as f64 / 1000.0),
-                    serde_json::json!(s),
-                ]),
-                values: None,
-            }],
+            result: serde_json::json!([*t as f64 / 1000.0, s]),
         },
     }
 }
