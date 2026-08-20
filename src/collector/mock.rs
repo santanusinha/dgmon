@@ -38,6 +38,11 @@ impl Collector for MockCollector {
                 pcie_link_gen_max: Some(5),
                 pcie_link_width: Some(16),
                 pcie_link_width_max: Some(16),
+                throttle_active: 0,
+                throttle_hw_thermal: false,
+                throttle_sw_thermal: false,
+                throttle_hw_slowdown: false,
+                throttle_power_brake: false,
             })
             .collect();
 
@@ -46,6 +51,9 @@ impl Collector for MockCollector {
             .map(|i| CpuCoreSample {
                 index: i,
                 usage_pct: 5.0 + (i as f32 % 20.0),
+                freq_mhz: Some(2800),
+                governor: Some("performance".into()),
+                max_freq_mhz: Some(3900),
             })
             .collect();
 

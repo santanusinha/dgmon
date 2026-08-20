@@ -224,12 +224,33 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
         ));
 
         // Per-CPU-core utilization.
-        for core in &snap.host.cpu_cores {
+        for c in &snap.host.cpu_cores {
             out.push_str("# HELP dgmon_cpu_core_usage_pct Per-CPU-core utilization percentage\n");
             out.push_str(&format!(
                 "dgmon_cpu_core_usage_pct{{hostname=\"{}\",core=\"{}\"{extra_labels}}} {:.1}\n",
-                host, core.index, core.usage_pct
+                host, c.index, c.usage_pct
             ));
+            if let Some(freq) = c.freq_mhz {
+                out.push_str("# HELP dgmon_cpu_core_freq_mhz Per-CPU-core frequency in MHz\n");
+                out.push_str(&format!(
+                    "dgmon_cpu_core_freq_mhz{{hostname=\"{}\",core=\"{}\"{extra_labels}}} {freq}\n",
+                    host, c.index
+                ));
+            }
+            if let Some(gov) = &c.governor {
+                out.push_str("# HELP dgmon_cpu_core_governor CPU scaling governor\n");
+                out.push_str(&format!(
+                    "dgmon_cpu_core_governor{{hostname=\"{}\",core=\"{}\"{extra_labels}}} {gov}\n",
+                    host, c.index
+                ));
+            }
+            if let Some(max_freq) = c.max_freq_mhz {
+                out.push_str("# HELP dgmon_cpu_core_max_freq_mhz Per-CPU-core max frequency in MHz\n");
+                out.push_str(&format!(
+                    "dgmon_cpu_core_max_freq_mhz{{hostname=\"{}\",core=\"{}\"{extra_labels}}} {max_freq}\n",
+                    host, c.index
+                ));
+            }
         }
 
         // Per-interface network utilization.
@@ -337,6 +358,18 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
                 out.push_str("# HELP dgmon_gpu_pcie_link_width_max Max PCIe link width in lanes\n");
                 out.push_str(&format!("dgmon_gpu_pcie_link_width_max{{{labels}}} {v}\n"));
             }
+
+            // GPU clock throttle reasons.
+            out.push_str("# HELP dgmon_gpu_throttle_active GPU clock throttle reasons bitmask\n");
+            out.push_str(&format!("dgmon_gpu_throttle_active{{{labels}}} {}\n", g.throttle_active));
+            out.push_str("# HELP dgmon_gpu_throttle_hw_thermal HW thermal slowdown active\n");
+            out.push_str(&format!("dgmon_gpu_throttle_hw_thermal{{{labels}}} {}\n", g.throttle_hw_thermal as u8));
+            out.push_str("# HELP dgmon_gpu_throttle_sw_thermal SW thermal slowdown active\n");
+            out.push_str(&format!("dgmon_gpu_throttle_sw_thermal{{{labels}}} {}\n", g.throttle_sw_thermal as u8));
+            out.push_str("# HELP dgmon_gpu_throttle_hw_slowdown HW slowdown active\n");
+            out.push_str(&format!("dgmon_gpu_throttle_hw_slowdown{{{labels}}} {}\n", g.throttle_hw_slowdown as u8));
+            out.push_str("# HELP dgmon_gpu_throttle_power_brake HW power brake slowdown active\n");
+            out.push_str(&format!("dgmon_gpu_throttle_power_brake{{{labels}}} {}\n", g.throttle_power_brake as u8));
         }
 
         // Inference metrics.

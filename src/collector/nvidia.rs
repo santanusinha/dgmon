@@ -40,7 +40,7 @@ impl Default for NvidiaSmiCollector {
 }
 
 /// CSV columns we request from nvidia-smi, in order.
-const QUERY: &str = "index,uuid,name,utilization.gpu,utilization.memory,temperature.gpu,power.draw,power.limit,memory.used,memory.total,fan.speed,pstate,clocks.sm,clocks.mem,clocks.max.sm,clocks.max.mem,temperature.memory,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max";
+const QUERY: &str = "index,uuid,name,utilization.gpu,utilization.memory,temperature.gpu,power.draw,power.limit,memory.used,memory.total,fan.speed,pstate,clocks.sm,clocks.mem,clocks.max.sm,clocks.max.mem,temperature.memory,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max,clocks_throttle_reasons.active";
 
 fn parse_u32(s: &str) -> u32 {
     s.trim().parse::<u32>().unwrap_or(0)
@@ -70,6 +70,20 @@ fn parse_opt_u64(s: &str) -> Option<u64> {
     s.parse::<u64>().ok()
 }
 
+fn parse_hex_u64(s: &str) -> u64 {
+    let s = s.trim();
+    if s == "[N/A]" || s.is_empty() {
+        return 0;
+    }
+    // Strip 0x prefix if present.
+    let s = s.strip_prefix("0x").unwrap_or(s);
+    u64::from_str_radix(s, 16).unwrap_or(0)
+}
+
+fn parse_bool_from_bitmask(mask: u64, bit: u64) -> bool {
+    mask & bit != 0
+}
+
 impl Collector for NvidiaSmiCollector {
     fn name(&self) -> &str {
         "nvidia-smi"
@@ -92,9 +106,11 @@ impl Collector for NvidiaSmiCollector {
 
         for line in stdout.lines() {
             let cols: Vec<&str> = line.split(", ").collect();
-            if cols.len() < 20 {
+            if cols.len() < 22 {
                 continue;
             }
+
+            let throttle = parse_hex_u64(cols[21]);
 
             gpus.push(GpuSample {
                 index: parse_u32(cols[0]),
@@ -118,6 +134,11 @@ impl Collector for NvidiaSmiCollector {
                 pcie_link_gen_max: parse_opt_u32(cols[18]),
                 pcie_link_width: parse_opt_u32(cols[19]),
                 pcie_link_width_max: parse_opt_u32(cols[20]),
+                throttle_active: throttle,
+                throttle_hw_thermal: parse_bool_from_bitmask(throttle, 0x10),
+                throttle_sw_thermal: parse_bool_from_bitmask(throttle, 0x40),
+                throttle_hw_slowdown: parse_bool_from_bitmask(throttle, 0x8),
+                throttle_power_brake: parse_bool_from_bitmask(throttle, 0x20),
             });
         }
 
@@ -173,6 +194,9 @@ impl NvidiaSmiCollector {
             .map(|(i, c)| CpuCoreSample {
                 index: i as u32,
                 usage_pct: c.cpu_usage(),
+                freq_mhz: Self::read_cpu_freq(i),
+                governor: Self::read_cpu_governor(i),
+                max_freq_mhz: Self::read_cpu_max_freq(i),
             })
             .collect();
 
@@ -204,6 +228,29 @@ impl NvidiaSmiCollector {
             cpu_cores,
             networks,
         }
+    }
+
+    /// Read the current CPU frequency from sysfs.
+    /// Returns the frequency in MHz, or None if unavailable.
+    fn read_cpu_freq(cpu_index: usize) -> Option<u32> {
+        let path = format!("/sys/devices/system/cpu/cpu{cpu_index}/cpufreq/scaling_cur_freq");
+        let khz = std::fs::read_to_string(&path).ok()?;
+        khz.trim().parse::<u32>().ok().map(|k| k / 1000)
+    }
+
+    /// Read the CPU scaling governor from sysfs.
+    fn read_cpu_governor(cpu_index: usize) -> Option<String> {
+        let path = format!("/sys/devices/system/cpu/cpu{cpu_index}/cpufreq/scaling_governor");
+        let gov = std::fs::read_to_string(&path).ok()?;
+        Some(gov.trim().to_string())
+    }
+
+    /// Read the maximum CPU frequency from sysfs.
+    /// Returns the frequency in MHz, or None if unavailable.
+    fn read_cpu_max_freq(cpu_index: usize) -> Option<u32> {
+        let path = format!("/sys/devices/system/cpu/cpu{cpu_index}/cpufreq/scaling_max_freq");
+        let khz = std::fs::read_to_string(&path).ok()?;
+        khz.trim().parse::<u32>().ok().map(|k| k / 1000)
     }
 }
 

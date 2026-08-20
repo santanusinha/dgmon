@@ -41,6 +41,21 @@ pub struct GpuSample {
     pub pcie_link_width: Option<u32>,
     /// Maximum PCIe link width in lanes.
     pub pcie_link_width_max: Option<u32>,
+    /// GPU clock throttle reasons bitmask (clocks_throttle_reasons.active).
+    #[serde(default)]
+    pub throttle_active: u64,
+    /// HW thermal slowdown active (bit 0x10).
+    #[serde(default)]
+    pub throttle_hw_thermal: bool,
+    /// SW thermal slowdown active (bit 0x40).
+    #[serde(default)]
+    pub throttle_sw_thermal: bool,
+    /// HW slowdown active (bit 0x8).
+    #[serde(default)]
+    pub throttle_hw_slowdown: bool,
+    /// HW power brake slowdown active (bit 0x20).
+    #[serde(default)]
+    pub throttle_power_brake: bool,
 }
 
 /// Per-CPU-core utilization sample.
@@ -48,6 +63,15 @@ pub struct GpuSample {
 pub struct CpuCoreSample {
     pub index: u32,
     pub usage_pct: f32,
+    /// Current CPU core frequency in MHz.
+    #[serde(default)]
+    pub freq_mhz: Option<u32>,
+    /// CPU scaling governor (performance, powersave, ondemand, etc.).
+    #[serde(default)]
+    pub governor: Option<String>,
+    /// Maximum CPU core frequency in MHz.
+    #[serde(default)]
+    pub max_freq_mhz: Option<u32>,
 }
 
 /// Per-interface network sample.
