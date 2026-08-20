@@ -31,6 +31,7 @@ impl TsinkStore {
             .with_data_path(data_dir)
             .with_retention(Duration::from_secs(30 * 24 * 3600))
             .with_timestamp_precision(TimestampPrecision::Milliseconds)
+            .with_background_fail_fast(false)
             .build()?;
         let engine = Engine::with_precision(
             Arc::clone(&storage),
