@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use actix_web::{web, HttpResponse, Responder};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::storage::TsinkStore;
 use tsink::promql::{PromqlValue, Sample, Series};
@@ -49,6 +49,38 @@ pub struct PromResult {
 /// Shared state for the Prometheus API handlers.
 pub struct PromState {
     pub tsink: Option<Arc<TsinkStore>>,
+}
+
+/// A single query in a batch request.
+#[derive(Deserialize)]
+pub struct BatchQuery {
+    /// Client-chosen id. Must be unique within the request.
+    pub id: String,
+    /// PromQL expression to evaluate.
+    pub expr: String,
+    /// Optional unix-seconds evaluation time. Defaults to now.
+    #[serde(default)]
+    pub time: Option<f64>,
+    /// Optional range spec for a range query (sparklines).
+    #[serde(default)]
+    pub range: Option<RangeSpec>,
+}
+
+/// Range spec for a batch range query.
+#[derive(Deserialize)]
+pub struct RangeSpec {
+    /// Start unix-seconds.
+    pub start: f64,
+    /// End unix-seconds.
+    pub end: f64,
+    /// Step in seconds.
+    pub step: f64,
+}
+
+/// Request body for `POST /api/v1/query_batch`.
+#[derive(Deserialize)]
+pub struct BatchRequest {
+    pub queries: Vec<BatchQuery>,
 }
 
 /// Build the metric label map, including `__name__`.
@@ -318,6 +350,73 @@ pub async fn buildinfo() -> impl Responder {
         )
 }
 
+/// POST /api/v1/query_batch — evaluate many queries in one round trip.
+///
+/// The request body is a JSON object with a `queries` array. Each query has
+/// an `id`, an `expr`, and optional `time` (unix seconds) or `range`
+/// (start/end/step in seconds). The response maps each id to its
+/// Prometheus-style result, or to an error object when that query fails.
+/// Other queries still succeed when one fails.
+pub async fn query_batch(
+    state: web::Data<PromState>,
+    body: web::Json<BatchRequest>,
+) -> impl Responder {
+    let Some(ref ts) = state.tsink else {
+        return storage_unavailable();
+    };
+
+    let req = body.into_inner();
+    if req.queries.is_empty() {
+        return error_response("missing 'queries' array");
+    }
+
+    // Reject duplicate ids to keep the response map unambiguous.
+    let mut seen = std::collections::HashSet::new();
+    for q in &req.queries {
+        if !seen.insert(q.id.clone()) {
+            return error_response(&format!("duplicate query id '{}'", q.id));
+        }
+    }
+
+    let mut data = serde_json::Map::new();
+    for q in &req.queries {
+        let result = if let Some(range) = &q.range {
+            let start_ms = (range.start * 1000.0) as i64;
+            let end_ms = (range.end * 1000.0) as i64;
+            let step_ms = (range.step * 1000.0).max(1.0) as i64;
+            ts.promql_range(&q.expr, start_ms, end_ms, step_ms)
+                .map(|v| promql_to_prom(&v))
+        } else {
+            let time_sec = q.time.unwrap_or_else(|| chrono::Utc::now().timestamp() as f64);
+            let time_ms = (time_sec * 1000.0) as i64;
+            ts.promql_instant(&q.expr, time_ms)
+                .map(|v| promql_to_prom(&v))
+        };
+
+        match result {
+            Ok(prom) => {
+                data.insert(q.id.clone(), serde_json::to_value(&prom).unwrap_or_default());
+            }
+            Err(e) => {
+                data.insert(
+                    q.id.clone(),
+                    serde_json::json!({"error": format!("{e}")}),
+                );
+            }
+        }
+    }
+
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(
+            serde_json::json!({
+                "status": "success",
+                "data": data,
+            })
+            .to_string(),
+        )
+}
+
 /// Register the Prometheus-compatible API routes.
 ///
 /// These routes are registered inside the `/api/v1` scope by `api::configure`.
@@ -327,6 +426,7 @@ pub async fn buildinfo() -> impl Responder {
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/query", web::get().to(query))
         .route("/query_range", web::get().to(query_range))
+        .route("/query_batch", web::post().to(query_batch))
         .route("/labels", web::get().to(labels))
         .route("/label/{name}/values", web::get().to(label_values))
         .route("/status/buildinfo", web::get().to(buildinfo));

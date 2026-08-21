@@ -21,6 +21,7 @@ Push-based cluster monitoring:
 - `src/server.rs` — Aggregation server: /ingest, /metrics, /snapshot, /nodes, /history, /query, /metrics/list, /health
 - `src/service.rs` — Standalone single-node service: /snapshot, /nodes, /metrics, /history, /query, /metrics/list, /health
 - `src/api.rs` — Versioned REST API under /api/v1/ (nodes, gpus, metrics)
+- `src/promapi.rs` — Prometheus-compatible API under /api/v1/ (query, query_range, query_batch, labels, label values, buildinfo)
 - `src/http.rs` — Shared actix-web handlers (dashboard, static, health, history, query, metrics/list)
 - `src/storage.rs` — TsinkStore wrapper (time-series storage)
 - `src/collect.rs` — CLI collector: once / loop
@@ -52,6 +53,12 @@ Push-based cluster monitoring:
 - `GET /api/v1/metrics` — list available metric names (requires `--data-dir`)
 - `GET /api/v1/metrics/{name}` — latest value(s) for a metric (requires `--data-dir`)
 - `GET /api/v1/metrics/{name}/history?start=<ms>&end=<ms>` — time-series for a metric (requires `--data-dir`)
+- `GET /api/v1/query?query=<expr>&time=<s>` — Prometheus instant query (requires `--data-dir`)
+- `GET /api/v1/query_range?query=<expr>&start=<s>&end=<s>&step=<s>` — Prometheus range query (requires `--data-dir`)
+- `GET /api/v1/labels` — list label names (requires `--data-dir`)
+- `GET /api/v1/label/{name}/values` — list values for one label (requires `--data-dir`)
+- `GET /api/v1/status/buildinfo` — version info
+- `POST /api/v1/query_batch` — evaluate many queries in one round trip (requires `--data-dir`)
 - CORS is enabled for all origins.
 
 # Key design decisions
