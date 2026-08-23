@@ -71,14 +71,22 @@ async function refreshAll() {
       // GPU table (instant).
       { id: "gpu_util", expr: `dgmon_gpu_utilization${hostSel}` },
       { id: "gpu_mem_util", expr: `dgmon_gpu_mem_utilization${hostSel}` },
+      { id: "gpu_mem_used", expr: `dgmon_gpu_memory_used_mb${hostSel}` },
+      { id: "gpu_mem_total", expr: `dgmon_gpu_memory_total_mb${hostSel}` },
       { id: "gpu_temp", expr: `dgmon_gpu_temp_c${hostSel}` },
       { id: "gpu_power", expr: `dgmon_gpu_power_w${hostSel}` },
       { id: "gpu_fan", expr: `dgmon_gpu_fan_speed_pct${hostSel}` },
+      { id: "gpu_sm_clock", expr: `dgmon_gpu_sm_clock_mhz${hostSel}` },
+      { id: "gpu_mem_clock", expr: `dgmon_gpu_mem_clock_mhz${hostSel}` },
       // Charts (range).
       { id: "chart-cpu", expr: `dgmon_cpu_usage_pct${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
       { id: "chart-mem", expr: `dgmon_memory_used_mb${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
       { id: "chart-gpu", expr: `dgmon_gpu_utilization${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
       { id: "chart-temp", expr: `dgmon_gpu_temp_c${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-gpu-mem", expr: `dgmon_gpu_memory_used_mb${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-gpu-power", expr: `dgmon_gpu_power_w${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-sm-clock", expr: `dgmon_gpu_sm_clock_mhz${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-mem-clock", expr: `dgmon_gpu_mem_clock_mhz${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
     ];
 
     const resp = await fetchJSON("/api/v1/query_batch", {
@@ -157,9 +165,13 @@ function renderGpuTable(data) {
   const empty = document.getElementById("gpu-empty");
   const util = vectorResults(data, "gpu_util");
   const memUtil = vectorResults(data, "gpu_mem_util");
+  const memUsed = vectorResults(data, "gpu_mem_used");
+  const memTotal = vectorResults(data, "gpu_mem_total");
   const temp = vectorResults(data, "gpu_temp");
   const power = vectorResults(data, "gpu_power");
   const fan = vectorResults(data, "gpu_fan");
+  const smClock = vectorResults(data, "gpu_sm_clock");
+  const memClock = vectorResults(data, "gpu_mem_clock");
 
   document.getElementById("gpu-count").textContent = util.length ? `${util.length} GPU${util.length!==1?'s':''}` : "\u2014";
   if (!util.length) { body.innerHTML = ""; empty.style.display = "block"; return; }
@@ -174,10 +186,11 @@ function renderGpuTable(data) {
     }
     return m;
   };
-  const utilM = byGpu(util), memM = byGpu(memUtil), tempM = byGpu(temp), powerM = byGpu(power), fanM = byGpu(fan);
+  const utilM = byGpu(util), memUtilM = byGpu(memUtil), memUsedM = byGpu(memUsed), memTotalM = byGpu(memTotal);
+  const tempM = byGpu(temp), powerM = byGpu(power), fanM = byGpu(fan), smClockM = byGpu(smClock), memClockM = byGpu(memClock);
 
   // Collect the union of gpu indices, sorted numerically.
-  const idxSet = new Set([...Object.keys(utilM), ...Object.keys(memM), ...Object.keys(tempM), ...Object.keys(powerM), ...Object.keys(fanM)]);
+  const idxSet = new Set([...Object.keys(utilM), ...Object.keys(memUtilM), ...Object.keys(memUsedM), ...Object.keys(memTotalM), ...Object.keys(tempM), ...Object.keys(powerM), ...Object.keys(fanM), ...Object.keys(smClockM), ...Object.keys(memClockM)]);
   const idxs = [...idxSet].sort((a, b) => Number(a) - Number(b));
 
   body.innerHTML = idxs.map((g) => {
@@ -186,19 +199,27 @@ function renderGpuTable(data) {
     const metric = utilM[g]?.metric || {};
     const model = metric.model || "\u2014";
     const uuid = metric.uuid || "\u2014";
-    const mem = memM[g] ? parseFloat(memM[g].value[1]) : null;
+    const mu = memUtilM[g] ? parseFloat(memUtilM[g].value[1]) : null;
+    const muUsed = memUsedM[g] ? parseFloat(memUsedM[g].value[1]) : null;
+    const muTotal = memTotalM[g] ? parseFloat(memTotalM[g].value[1]) : null;
     const t = tempM[g] ? parseFloat(tempM[g].value[1]) : null;
     const p = powerM[g] ? parseFloat(powerM[g].value[1]) : null;
     const f = fanM[g] ? parseFloat(fanM[g].value[1]) : null;
+    const sc = smClockM[g] ? parseFloat(smClockM[g].value[1]) : null;
+    const mc = memClockM[g] ? parseFloat(memClockM[g].value[1]) : null;
+    const memUsedStr = muUsed != null ? (muTotal != null ? `${fmt(muUsed/1024,1)}/${fmt(muTotal/1024,0)}G` : `${fmt(muUsed/1024,1)}G`) : "\u2014";
     return `<tr>
       <td class="idx">${g}</td>
       <td>${esc(model)}</td>
       <td style="font-size:10px;color:var(--txt-3)">${esc(uuid.slice(0,20))}\u2026</td>
       <td class="num"><span class="bar ${barCls}"><i style="width:${u}%"></i></span>${fmt(u,0)}%</td>
-      <td class="num">${mem != null ? fmt(mem,0)+"%" : "\u2014"}</td>
+      <td class="num">${mu != null ? fmt(mu,0)+"%" : "\u2014"}</td>
+      <td class="num">${memUsedStr}</td>
       <td class="num">${t != null ? fmt(t,0)+"\u00b0" : "\u2014"}</td>
       <td class="num">${p != null ? fmt(p,0) : "\u2014"}</td>
       <td class="num">${f != null ? fmt(f,0)+"%" : "\u2014"}</td>
+      <td class="num">${sc != null ? fmt(sc,0)+" MHz" : "\u2014"}</td>
+      <td class="num">${mc != null ? fmt(mc,0)+" MHz" : "\u2014"}</td>
     </tr>`;
   }).join("");
 }
@@ -209,6 +230,10 @@ const CHART_DEFS = [
   { id: "chart-mem", qid: "chart-mem", nowId: "now-mem", label: "Mem MB", unit: " MB" },
   { id: "chart-gpu", qid: "chart-gpu", nowId: "now-gpu", label: "GPU %", unit: "%" },
   { id: "chart-temp", qid: "chart-temp", nowId: "now-temp", label: "\u00b0C", unit: "\u00b0" },
+  { id: "chart-gpu-mem", qid: "chart-gpu-mem", nowId: "now-gpu-mem", label: "GPU Mem GB", unit: " GB", div: 1024 },
+  { id: "chart-gpu-power", qid: "chart-gpu-power", nowId: "now-gpu-power", label: "Power W", unit: " W" },
+  { id: "chart-sm-clock", qid: "chart-sm-clock", nowId: "now-sm-clock", label: "SM MHz", unit: " MHz" },
+  { id: "chart-mem-clock", qid: "chart-mem-clock", nowId: "now-mem-clock", label: "Mem MHz", unit: " MHz" },
 ];
 
 function createOrUpdateChart(def, resp, now) {
@@ -239,7 +264,15 @@ function createOrUpdateChart(def, resp, now) {
   // Build datasets
   const datasets = sel.map((s, si) => {
     const map = new Map(s.values.map(([ts, v]) => [Math.floor(ts), v]));
-    const data = times.map((t) => map.has(t / 1000) ? parseFloat(map.get(t / 1000)) : null);
+    const div = def.div || 1;
+    const tol = 15; // seconds tolerance for timestamp matching
+    const data = times.map((t) => {
+      const sec = t / 1000;
+      for (let dt = -tol; dt <= tol; dt += 1) {
+        if (map.has(sec + dt)) return parseFloat(map.get(sec + dt)) / div;
+      }
+      return null;
+    });
     const lbl = s.metric ? Object.entries(s.metric).filter(([k]) => k !== "__name__" && k !== "hostname").map(([, v]) => v).join(" ") : "";
     return {
       label: lbl || (s.metric && s.metric.__name__) || "",
@@ -259,7 +292,8 @@ function createOrUpdateChart(def, resp, now) {
   const nowEl = document.getElementById(def.nowId);
   if (nowEl && sel.length) {
     const last = sel[0].values[sel[0].values.length - 1];
-    if (last) nowEl.textContent = `${parseFloat(last[1]).toFixed(1)}${def.unit}`;
+    const div = def.div || 1;
+    if (last) nowEl.textContent = `${(parseFloat(last[1]) / div).toFixed(1)}${def.unit}`;
   }
 
   if (state.charts[def.id]) {
@@ -272,7 +306,7 @@ function createOrUpdateChart(def, resp, now) {
 
   state.charts[def.id] = new Chart(canvas, {
     type: "line",
-    { labels, datasets },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,

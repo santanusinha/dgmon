@@ -56,7 +56,22 @@
           <div class="t"><span>GPU Temperature</span><span class="now" id="now-temp">—</span></div>
           <div id="chart-temp" class="cv"><canvas width="400" height="200"></canvas></div>
         </div>
-      </div>
+        <div class="chart-card">
+          <div class="t"><span>GPU Memory Used</span><span class="now" id="now-gpu-mem">—</span></div>
+          <div id="chart-gpu-mem" class="cv"><canvas width="400" height="200"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="t"><span>GPU Power</span><span class="now" id="now-gpu-power">—</span></div>
+          <div id="chart-gpu-power" class="cv"><canvas width="400" height="200"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="t"><span>SM Clock</span><span class="now" id="now-sm-clock">—</span></div>
+          <div id="chart-sm-clock" class="cv"><canvas width="400" height="200"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="t"><span>Mem Clock</span><span class="now" id="now-mem-clock">—</span></div>
+          <div id="chart-mem-clock" class="cv"><canvas width="400" height="200"></canvas></div>
+        </div>
     </section>
 
     <section>
@@ -69,7 +84,7 @@
           <thead>
             <tr>
               <th>#</th><th>Model</th><th>UUID</th><th>Util</th><th>Mem Util</th>
-              <th>Temp</th><th>Power</th><th>Fan</th>
+              <th>Mem Used</th><th>Temp</th><th>Power</th><th>Fan</th><th>SM Clock</th><th>Mem Clock</th>
             </tr>
           </thead>
           <tbody id="gpu-table-body"></tbody>
