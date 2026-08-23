@@ -14,6 +14,7 @@ use std::time::Duration;
 use tsink::promql::{Engine, PromqlValue};
 use tsink::{DataPoint, Label, Row, Storage, StorageBuilder, TimestampPrecision};
 use crate::collector::Snapshot;
+use crate::metric_name::sanitize_metric_name;
 
 /// Wraps a tsink `Storage` instance and converts dgmon snapshots
 /// into labeled time-series rows.
@@ -22,6 +23,9 @@ pub struct TsinkStore {
     storage: Arc<dyn Storage>,
     engine: Engine,
 }
+
+/// A series of (label, point) pairs returned by `query_all`.
+pub type SeriesWithLabels = Vec<(Vec<(String, String)>, Vec<(i64, f64)>)>;
 
 impl TsinkStore {
     /// Open or create a tsink database at the given path.
@@ -335,6 +339,7 @@ impl TsinkStore {
         Ok(names)
     }
 
+
     /// Query all series for a metric within a time range.
     /// Returns (labels, points) pairs, one per label set.
     pub fn query_all(
@@ -342,7 +347,7 @@ impl TsinkStore {
         metric: &str,
         start_ms: i64,
         end_ms: i64,
-    ) -> anyhow::Result<Vec<(Vec<(String, String)>, Vec<(i64, f64)>)>> {
+    ) -> anyhow::Result<SeriesWithLabels> {
         let series = self.storage.select_all(metric, start_ms, end_ms)?;
         Ok(series
             .into_iter()
@@ -361,7 +366,11 @@ impl TsinkStore {
     }
 
     /// Evaluate a PromQL instant query at the given timestamp (milliseconds).
-    pub fn promql_instant(&self, query: &str, time_ms: i64) -> anyhow::Result<PromqlValue> {
+    pub fn promql_instant(
+        &self,
+        query: &str,
+        time_ms: i64,
+    ) -> anyhow::Result<PromqlValue> {
         Ok(self.engine.instant_query(query, time_ms)?)
     }
 
@@ -384,31 +393,3 @@ impl TsinkStore {
     }
 }
 
-/// Convert a Prometheus metric name into a valid tsink metric name.
-/// Replaces characters that are not alphanumeric or underscore with
-/// underscores, strips a known engine prefix (`vllm:` or `sglang:`), and
-/// prefixes with `dgmon_inference_` to avoid collisions.
-fn sanitize_metric_name(name: &str) -> String {
-    let stripped = strip_engine_prefix(name);
-    let mut out = String::with_capacity(stripped.len() + 16);
-    out.push_str("dgmon_inference_");
-    for c in stripped.chars() {
-        if c.is_ascii_alphanumeric() || c == '_' {
-            out.push(c);
-        } else {
-            out.push('_');
-        }
-    }
-    out
-}
-
-/// Strip a known engine prefix (`vllm:` or `sglang:`) from a raw metric name.
-/// Returns the name unchanged when no engine prefix is present.
-fn strip_engine_prefix(name: &str) -> &str {
-    for prefix in ["vllm:", "sglang:"] {
-        if let Some(rest) = name.strip_prefix(prefix) {
-            return rest;
-        }
-    }
-    name
-}

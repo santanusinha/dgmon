@@ -8,7 +8,6 @@
 //!   - The server stores the latest snapshot from every node.
 //!   - Prometheus scrapes `/metrics` on the server to get all nodes at once.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use actix_cors::Cors;
@@ -19,53 +18,7 @@ use crate::collector::Snapshot;
 use crate::http::{self, AppState};
 use crate::promapi::PromState;
 use crate::storage::TsinkStore;
-
-/// Multi-node in-memory store of the latest snapshot per host.
-pub struct NodeStore {
-    nodes: std::sync::RwLock<HashMap<String, Snapshot>>,
-}
-
-impl NodeStore {
-    fn new() -> Self {
-        Self {
-            nodes: std::sync::RwLock::new(HashMap::new()),
-        }
-    }
-
-    fn put(&self, hostname: String, snap: Snapshot) {
-        self.nodes.write().unwrap().insert(hostname, snap);
-    }
-
-    fn all(&self) -> Vec<Snapshot> {
-        self.nodes.read().unwrap().values().cloned().collect()
-    }
-
-    fn node_list(&self) -> Vec<NodeInfo> {
-        self.nodes
-            .read()
-            .unwrap()
-            .iter()
-            .map(|(host, snap)| NodeInfo {
-                hostname: host.clone(),
-                gpus: snap.gpus.len() as u32,
-                timestamp: snap.timestamp,
-            })
-            .collect()
-    }
-}
-
-impl SnapshotSource for NodeStore {
-    fn all(&self) -> Vec<Snapshot> {
-        self.all()
-    }
-}
-
-#[derive(serde::Serialize)]
-struct NodeInfo {
-    hostname: String,
-    gpus: u32,
-    timestamp: chrono::DateTime<chrono::Utc>,
-}
+use crate::store::NodeStore;
 
 /// Shared state for the server actix-web app.
 struct ServerState {
@@ -108,10 +61,10 @@ async fn ingest(
     let n_gpus = snap.gpus.len();
 
     // Write to tsink for historical storage.
-    if let Some(ref ts) = state.http.tsink {
-        if let Err(e) = ts.write_snapshot(&snap) {
-            tracing::warn!("tsink write failed for {hostname}: {e:#}");
-        }
+    if let Some(ref ts) = state.http.tsink
+        && let Err(e) = ts.write_snapshot(&snap)
+    {
+        tracing::warn!("tsink write failed for {hostname}: {e:#}");
     }
 
     state.store.put(hostname.clone(), snap);

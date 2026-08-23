@@ -24,6 +24,8 @@ Push-based cluster monitoring:
 - `src/promapi.rs` — Prometheus-compatible API under /api/v1/ (query, query_range, query_batch, labels, label values, buildinfo)
 - `src/http.rs` — Shared actix-web handlers (dashboard, static, health, history, query, metrics/list)
 - `src/storage.rs` — TsinkStore wrapper (time-series storage)
+- `src/store.rs` — Shared multi-node in-memory store (NodeStore, NodeInfo)
+- `src/metric_name.rs` — Shared metric-name helpers (sanitize_metric_name, strip_engine_prefix)
 - `src/collect.rs` — CLI collector: once / loop
 
 # Time-series storage
@@ -93,7 +95,6 @@ Push-based cluster monitoring:
 - chrono (timestamps)
 - tracing / tracing-subscriber (structured logging)
 - anyhow (error handling)
-- toml (config file parsing)
 - tsink (embedded time-series database for historical metric storage)
 
 # Testing the push architecture

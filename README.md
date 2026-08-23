@@ -195,8 +195,6 @@ query, that id maps to `{ "error": "..." }`. Other queries still succeed.
 ### Response conventions
 
 - All responses are JSON.
-
-- All responses are JSON.
 - Timestamps are milliseconds since the Unix epoch.
 - Errors use a consistent shape:
   `{"error": {"code": "...", "message": "..."}}`.
@@ -423,9 +421,22 @@ src/
   service.rs      — Standalone single-node service
   http.rs         — Shared actix-web handlers (dashboard, static, health, history, query)
   storage.rs      — TsinkStore wrapper (time-series storage)
+  store.rs        — Shared multi-node in-memory store (NodeStore, NodeInfo)
+  metric_name.rs  — Shared metric-name helpers (sanitize_metric_name, strip_engine_prefix)
   collect.rs      — CLI collector: once / loop
 ```
+
+## Security
+
+`POST /ingest` has no authentication. Any client that can reach the server
+can push a snapshot. This is a deliberate design choice for a trusted
+network. Run the server on a trusted network or behind a reverse proxy.
+
+Do not expose the server directly to the public internet. If you must, put
+a reverse proxy (for example nginx or Caddy) in front of it and add
+authentication there.
 
 ## License
 
 Apache-2.0
+

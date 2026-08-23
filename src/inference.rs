@@ -243,11 +243,10 @@ fn extract_port_from_command(inspect: &bollard::models::ContainerInspectResponse
     // Try direct array lookup first.
     let mut i = 0;
     while i < cmd.len() {
-        if cmd[i] == "--port" {
-            if let Some(p) = cmd.get(i + 1).and_then(|s| s.parse::<u16>().ok()) {
+        if cmd[i] == "--port"
+            && let Some(p) = cmd.get(i + 1).and_then(|s| s.parse::<u16>().ok()) {
                 return Some(p);
             }
-        }
         i += 1;
     }
 
@@ -255,11 +254,10 @@ fn extract_port_from_command(inspect: &bollard::models::ContainerInspectResponse
     let joined = cmd.join(" ");
     if let Some(pos) = joined.find("--port ") {
         let after = &joined[pos + 7..];
-        if let Some(port_str) = after.split_whitespace().next() {
-            if let Ok(p) = port_str.parse::<u16>() {
+        if let Some(port_str) = after.split_whitespace().next()
+            && let Ok(p) = port_str.parse::<u16>() {
                 return Some(p);
             }
-        }
     }
 
     Some(8000)

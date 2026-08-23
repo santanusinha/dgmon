@@ -12,6 +12,7 @@ use actix_web::{web, HttpResponse, Responder};
 use serde::Serialize;
 
 use crate::collector::Snapshot;
+use crate::metric_name::sanitize_metric_name;
 use crate::storage::TsinkStore;
 use tsink::promql::{PromqlValue, Sample, Series};
 
@@ -155,7 +156,6 @@ pub async fn chart_js() -> impl Responder {
 }
 
 /// GET /health — liveness probe.
-/// GET /health — liveness probe.
 pub async fn health() -> impl Responder {
     HttpResponse::Ok().body("ok\n")
 }
@@ -166,13 +166,13 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
     let mut out = String::new();
 
     for snap in snaps {
-        let host = &snap.host.hostname;
+        let host = escape_label_value(&snap.host.hostname);
 
         // Extra metadata labels merged into every metric.
         let extra_labels: String = snap
             .extra
             .iter()
-            .map(|(k, v)| format!(",{k}=\"{v}\""))
+            .map(|(k, v)| format!(",{k}=\"{}\"", escape_label_value(v)))
             .collect();
 
         out.push_str("# HELP dgmon_cpu_usage_pct CPU usage percentage\n");
@@ -225,30 +225,31 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
 
         // Per-CPU-core utilization.
         for c in &snap.host.cpu_cores {
+            let core = escape_label_value(&c.index.to_string());
             out.push_str("# HELP dgmon_cpu_core_usage_pct Per-CPU-core utilization percentage\n");
             out.push_str(&format!(
                 "dgmon_cpu_core_usage_pct{{hostname=\"{}\",core=\"{}\"{extra_labels}}} {:.1}\n",
-                host, c.index, c.usage_pct
+                host, core, c.usage_pct
             ));
             if let Some(freq) = c.freq_mhz {
                 out.push_str("# HELP dgmon_cpu_core_freq_mhz Per-CPU-core frequency in MHz\n");
                 out.push_str(&format!(
                     "dgmon_cpu_core_freq_mhz{{hostname=\"{}\",core=\"{}\"{extra_labels}}} {freq}\n",
-                    host, c.index
+                    host, core
                 ));
             }
             if let Some(gov) = &c.governor {
                 out.push_str("# HELP dgmon_cpu_core_governor CPU scaling governor\n");
                 out.push_str(&format!(
                     "dgmon_cpu_core_governor{{hostname=\"{}\",core=\"{}\"{extra_labels}}} {gov}\n",
-                    host, c.index
+                    host, core
                 ));
             }
             if let Some(max_freq) = c.max_freq_mhz {
                 out.push_str("# HELP dgmon_cpu_core_max_freq_mhz Per-CPU-core max frequency in MHz\n");
                 out.push_str(&format!(
                     "dgmon_cpu_core_max_freq_mhz{{hostname=\"{}\",core=\"{}\"{extra_labels}}} {max_freq}\n",
-                    host, c.index
+                    host, core
                 ));
             }
         }
@@ -257,7 +258,9 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
         for net in &snap.host.networks {
             let net_labels = format!(
                 "hostname=\"{}\",interface=\"{}\",role=\"{}\"{extra_labels}",
-                host, net.interface, net.role
+                host,
+                escape_label_value(&net.interface),
+                escape_label_value(&net.role)
             );
             out.push_str("# HELP dgmon_net_rx_bytes Per-interface bytes received\n");
             out.push_str(&format!("dgmon_net_rx_bytes{{{net_labels}}} {}\n", net.rx_bytes));
@@ -281,7 +284,10 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
         for g in &snap.gpus {
             let labels = format!(
                 "hostname=\"{}\",gpu=\"{}\",uuid=\"{}\",model=\"{}\"{extra_labels}",
-                host, g.index, g.uuid, g.name
+                host,
+                escape_label_value(&g.index.to_string()),
+                escape_label_value(&g.uuid),
+                escape_label_value(&g.name)
             );
 
             out.push_str("# HELP dgmon_gpu_utilization GPU utilization percentage\n");
@@ -376,7 +382,9 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
         for inf in &snap.inference {
             let inf_labels = format!(
                 "hostname=\"{}\",engine=\"{}\",model_name=\"{}\"{extra_labels}",
-                host, inf.engine, inf.model_name
+                host,
+                escape_label_value(&inf.engine),
+                escape_label_value(&inf.model_name)
             );
             for (name, value) in &inf.metrics {
                 let metric = sanitize_metric_name(name);
@@ -386,6 +394,33 @@ pub fn render_prometheus(snaps: &[Snapshot]) -> String {
     }
 
     out
+}
+
+/// Escape a Prometheus label value so it is safe inside a quoted label.
+/// Replaces backslash, double quote, and newline characters.
+fn escape_label_value(v: &str) -> String {
+    let mut out = String::with_capacity(v.len());
+    for c in v.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_label_value_escapes_special_chars() {
+        assert_eq!(escape_label_value("bad\"host\\name"), "bad\\\"host\\\\name");
+        assert_eq!(escape_label_value("line\nbreak"), "line\\nbreak");
+        assert_eq!(escape_label_value("plain"), "plain");
+    }
 }
 
 /// GET /history?metric=<name>&hostname=<host>&start=<ms>&end=<ms>
@@ -512,33 +547,4 @@ pub async fn query(
             .content_type("application/json")
             .body(format!("{{\"error\":\"{e}\"}}")),
     }
-}
-
-/// Convert a Prometheus metric name into a valid Prometheus metric name.
-/// Replaces characters that are not alphanumeric or underscore with
-/// underscores, strips a known engine prefix (`vllm:` or `sglang:`), and
-/// prefixes with `dgmon_inference_` to avoid collisions.
-fn sanitize_metric_name(name: &str) -> String {
-    let stripped = strip_engine_prefix(name);
-    let mut out = String::with_capacity(stripped.len() + 16);
-    out.push_str("dgmon_inference_");
-    for c in stripped.chars() {
-        if c.is_ascii_alphanumeric() || c == '_' {
-            out.push(c);
-        } else {
-            out.push('_');
-        }
-    }
-    out
-}
-
-/// Strip a known engine prefix (`vllm:` or `sglang:`) from a raw metric name.
-/// Returns the name unchanged when no engine prefix is present.
-fn strip_engine_prefix(name: &str) -> &str {
-    for prefix in ["vllm:", "sglang:"] {
-        if let Some(rest) = name.strip_prefix(prefix) {
-            return rest;
-        }
-    }
-    name
 }

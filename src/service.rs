@@ -18,6 +18,7 @@ use crate::http::{self, AppState};
 use crate::promapi::PromState;
 use crate::inference::collect_inference;
 use crate::storage::TsinkStore;
+use crate::store::NodeStore;
 
 /// Shared state for the service actix-web app.
 struct ServiceState {
@@ -65,10 +66,10 @@ async fn ingest(
     let n_gpus = snap.gpus.len();
 
     // Write to tsink for historical storage.
-    if let Some(ref ts) = state.http.tsink {
-        if let Err(e) = ts.write_snapshot(&snap) {
-            tracing::warn!("tsink write failed for {hostname}: {e:#}");
-        }
+    if let Some(ref ts) = state.http.tsink
+        && let Err(e) = ts.write_snapshot(&snap)
+    {
+        tracing::warn!("tsink write failed for {hostname}: {e:#}");
     }
 
     state.store.put(hostname.clone(), snap);
@@ -104,25 +105,9 @@ pub fn run(
         }
     };
 
-    // Background collection loop: collect locally and write to store + tsink.
-    let store_bg = Arc::clone(&store);
-    let tsink_bg = tsink.clone();
-    let inference_servers_bg = inference_servers.clone();
-    let interface_role_overrides_bg = interface_role_overrides.clone();
-    std::thread::spawn(move || {
-        collect_loop(
-            store_bg,
-            tsink_bg,
-            collector,
-            interval,
-            inference_servers_bg,
-            interface_role_overrides_bg,
-        )
-    });
-
     let service_state = web::Data::new(ServiceState {
         store: Arc::clone(&store),
-        http: AppState { tsink },
+        http: AppState { tsink: tsink.clone() },
     });
 
     // REST API state: expose the node store and tsink to /api/v1 handlers.
@@ -138,6 +123,35 @@ pub fn run(
     let tsink_shutdown = service_state.http.tsink.clone();
 
     sys.block_on(async move {
+        // Build an async reqwest client for inference scraping.
+        let client = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("failed to build HTTP client: {e}");
+                return Err(anyhow::anyhow!("failed to build HTTP client: {e}"));
+            }
+        };
+
+        // Background collection loop, spawned on the same runtime as the
+        // HTTP server. Uses tokio::time::interval for pacing and
+        // spawn_blocking for the blocking collector call.
+        let store_bg = Arc::clone(&store);
+        let tsink_bg = tsink.clone();
+        let inference_servers_bg = inference_servers.clone();
+        let interface_role_overrides_bg = interface_role_overrides.clone();
+        actix_rt::spawn(collect_loop(
+            store_bg,
+            tsink_bg,
+            collector,
+            interval,
+            inference_servers_bg,
+            interface_role_overrides_bg,
+            client,
+        ));
+
         let server = HttpServer::new(move || {
             let cors = Cors::permissive();
             App::new()
@@ -207,44 +221,30 @@ pub fn run(
 }
 
 /// Background collection loop: collect locally and store in the node store.
-fn collect_loop(
+async fn collect_loop(
     store: Arc<NodeStore>,
     tsink: Option<Arc<TsinkStore>>,
     collector: Arc<dyn Collector>,
     interval: Duration,
     inference_servers: Vec<String>,
     interface_role_overrides: HashMap<String, String>,
+    client: reqwest::Client,
 ) {
-    // Build an async reqwest client for inference scraping.
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("failed to build HTTP client: {e}");
-            return;
-        }
-    };
-
-    // Build a tokio runtime for async inference collection.
-    let rt = match tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => {
-            tracing::error!("failed to build tokio runtime: {e}");
-            return;
-        }
-    };
-
+    let mut ticker = tokio::time::interval(interval);
     loop {
-        let mut snap = match collector.collect() {
+        ticker.tick().await;
+
+        // The collector call is blocking. Run it on a blocking thread so
+        // it does not stall the async runtime.
+        let collector = Arc::clone(&collector);
+        let snap = tokio::task::spawn_blocking(move || collector.collect())
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("collection task join failed: {e}")));
+
+        let mut snap = match snap {
             Ok(snap) => snap,
             Err(e) => {
                 tracing::warn!("collection failed: {e:#}");
-                std::thread::sleep(interval);
                 continue;
             }
         };
@@ -261,7 +261,7 @@ fn collect_loop(
         // data (e.g. the mock collector supplies synthetic inference samples).
         if snap.inference.is_empty() {
             let inference_servers = inference_servers.clone();
-            snap.inference = rt.block_on(collect_inference(&client, &inference_servers));
+            snap.inference = collect_inference(&client, &inference_servers).await;
         }
 
         let n = snap.gpus.len();
@@ -276,54 +276,5 @@ fn collect_loop(
 
         let hostname = snap.host.hostname.clone();
         store.put(hostname, snap);
-        std::thread::sleep(interval);
     }
-}
-
-// --- Multi-node store ---
-
-struct NodeStore {
-    nodes: std::sync::RwLock<HashMap<String, Snapshot>>,
-}
-
-impl NodeStore {
-    fn new() -> Self {
-        Self {
-            nodes: std::sync::RwLock::new(HashMap::new()),
-        }
-    }
-
-    fn put(&self, hostname: String, snap: Snapshot) {
-        self.nodes.write().unwrap().insert(hostname, snap);
-    }
-
-    fn all(&self) -> Vec<Snapshot> {
-        self.nodes.read().unwrap().values().cloned().collect()
-    }
-
-    fn node_list(&self) -> Vec<NodeInfo> {
-        self.nodes
-            .read()
-            .unwrap()
-            .iter()
-            .map(|(host, snap)| NodeInfo {
-                hostname: host.clone(),
-                gpus: snap.gpus.len() as u32,
-                timestamp: snap.timestamp,
-            })
-            .collect()
-    }
-}
-
-impl SnapshotSource for NodeStore {
-    fn all(&self) -> Vec<Snapshot> {
-        self.all()
-    }
-}
-
-#[derive(serde::Serialize)]
-struct NodeInfo {
-    hostname: String,
-    gpus: u32,
-    timestamp: chrono::DateTime<chrono::Utc>,
 }

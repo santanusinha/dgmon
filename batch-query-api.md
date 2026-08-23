@@ -111,13 +111,15 @@ public:
 - Per-query error: that id has no result. Widget shows stale or blank.
 - Missing id in response: treat as error for that widget.
 
-## Open questions
+## Resolved questions
 
-- Should the batch endpoint also support `query_range` now, or only instant
-  queries? (Sparklines are future work.)
-- Should the request allow a shared `time` for all queries, or per-query
-  only? (Per-query is more flexible; shared is simpler.)
-- Should dgmon validate that ids are unique and reject duplicates?
+- Range queries: supported. Each query may carry an optional `range` object
+  with `start`, `end`, and `step` (unix seconds). When present, dgmon runs a
+  range query; otherwise it runs an instant query.
+- Shared `time`: not implemented. Each query carries its own optional
+  `time`. A shared top-level time is future work.
+- Duplicate ids: rejected. dgmon returns an error when two queries share the
+  same `id`, so the response map stays unambiguous.
 
 ## Related
 
