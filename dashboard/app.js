@@ -7,6 +7,15 @@ const PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2
 
 const state = { nodes: [], selected: null, charts: {}, timer: null, view: "cluster" };
 
+/* -- DOM update cache: skip innerHTML when content is unchanged (prevents flicker) -- */
+const _lastHTML = {};
+function updateHTML(el, html, key) {
+  if (_lastHTML[key] === html) return;
+  _lastHTML[key] = html;
+  el.innerHTML = html;
+}
+function clearHTML(key) { delete _lastHTML[key]; }
+
 /* -- theme -- */
 function getThemeColors() {
   const cs = getComputedStyle(document.documentElement);
@@ -30,6 +39,8 @@ function applyTheme(theme) {
     }
   }
   state.charts = {};
+  // Clear DOM cache so cards rebuild with new theme.
+  for (const k in _lastHTML) delete _lastHTML[k];
   refreshAll();
 }
 
@@ -217,11 +228,11 @@ function renderClusterCards(data) {
   const netRx = firstValue(data, "cl_net_rx");
   const netTx = firstValue(data, "cl_net_tx");
 
-  if (gpuUtil == null) { el.innerHTML = '<div class="empty-note">No data yet…</div>'; return; }
+  if (gpuUtil == null) { updateHTML(el, '<div class="empty-note">No data yet…</div>', 'cluster-cards'); return; }
 
   const memPct = gpuMemTotal ? Math.round((gpuMemUsed / gpuMemTotal) * 100) : 0;
   const sysMemPct = memTotal ? Math.round((memUsed / memTotal) * 100) : 0;
-  el.innerHTML = `
+  updateHTML(el, `
     <div class="stat">
       <div class="k">GPUs</div>
       <div class="v">${fmt(gpuCount,0)}</div>
@@ -249,7 +260,7 @@ function renderClusterCards(data) {
     <div class="stat">
       <div class="k">Network</div>
       <div class="v">${fmt(netRx/1e6,1)} <small>↓ / ${fmt(netTx/1e6,1)} ↑ MB/s</small></div>
-    </div>`;
+    </div>`, 'cluster-cards');
 }
 
 /* ── inference overview cards ── */
@@ -265,9 +276,9 @@ function renderInferenceCards(data) {
   const itlP50 = firstValue(data, "inf_itl_p50");
   const success = firstValue(data, "inf_success");
 
-  if (running == null && tokSec == null) { el.innerHTML = '<div class="empty-note">No inference data yet…</div>'; return; }
+  if (running == null && tokSec == null) { updateHTML(el, '<div class="empty-note">No inference data yet…</div>', 'inference-cards'); return; }
 
-  el.innerHTML = `
+  updateHTML(el, `
     <div class="stat">
       <div class="k">Requests Running</div>
       <div class="v">${fmt(running,0)}</div>
@@ -300,7 +311,7 @@ function renderInferenceCards(data) {
       <div class="k">KV Cache</div>
       <div class="v">${fmt(kvCache,1)}%</div>
       <div class="bar${kvCache>80?kvCache>95?' crit':' warn':''}"><i style="width:${kvCache}%"></i></div>
-    </div>`;
+    </div>`, 'inference-cards');
 }
 
 /* ── cluster per-node table ── */
@@ -317,7 +328,7 @@ function renderClusterTable(data) {
   const ttft = vectorResults(data, "node_ttft");
 
   document.getElementById("cluster-node-count").textContent = gpuUtil.length ? `${gpuUtil.length} node${gpuUtil.length!==1?'s':''}` : "—";
-  if (!gpuUtil.length) { body.innerHTML = ""; empty.style.display = "block"; return; }
+  if (!gpuUtil.length) { updateHTML(body, "", 'cluster-table'); empty.style.display = "block"; return; }
   empty.style.display = "none";
 
   // Index by hostname.
@@ -334,7 +345,7 @@ function renderClusterTable(data) {
 
   const hosts = [...new Set([...Object.keys(utilM), ...Object.keys(memUsedM), ...Object.keys(memTotalM), ...Object.keys(countM), ...Object.keys(tokM), ...Object.keys(inTokM), ...Object.keys(reqM), ...Object.keys(ttftM)])].sort();
 
-  body.innerHTML = hosts.map((h) => {
+  updateHTML(body, hosts.map((h) => {
     const u = utilM[h] ? parseFloat(utilM[h].value[1]) : null;
     const mu = memUsedM[h] ? parseFloat(memUsedM[h].value[1]) : null;
     const mt = memTotalM[h] ? parseFloat(memTotalM[h].value[1]) : null;
@@ -354,7 +365,7 @@ function renderClusterTable(data) {
       <td class="num">${rr != null ? fmt(rr,0) : "—"}</td>
       <td class="num">${tt != null ? fmt(tt,3)+"s" : "—"}</td>
     </tr>`;
-  }).join("");
+  }).join(""), 'cluster-table');
 }
 
 /* -- host cards -- */
@@ -369,11 +380,11 @@ function renderHostCards(data) {
   const netTx = firstValue(data, "net_tx");
   const uptime = firstValue(data, "uptime");
 
-  if (cpuPct == null) { host.innerHTML = '<div class="empty-note">No data yet…</div>'; return; }
+  if (cpuPct == null) { updateHTML(host, '<div class="empty-note">No data yet…</div>', 'host-cards'); return; }
 
   const memPct = memTotal ? Math.round((memUsed / memTotal) * 100) : 0;
   const diskPct = diskTotal ? Math.round((diskUsed / diskTotal) * 100) : 0;
-  host.innerHTML = `
+  updateHTML(host, `
     <div class="stat">
       <div class="k">CPU</div>
       <div class="v">${fmt(cpuPct,1)}% <small>used</small></div>
@@ -396,7 +407,7 @@ function renderHostCards(data) {
     <div class="stat">
       <div class="k">Uptime</div>
       <div class="v">${fmtUptime(uptime)}</div>
-    </div>`;
+    </div>`, 'host-cards');
 }
 
 /* -- gpu table -- */
@@ -414,7 +425,7 @@ function renderGpuTable(data) {
   const memClock = vectorResults(data, "gpu_mem_clock");
 
   document.getElementById("gpu-count").textContent = util.length ? `${util.length} GPU${util.length!==1?'s':''}` : "—";
-  if (!util.length) { body.innerHTML = ""; empty.style.display = "block"; return; }
+  if (!util.length) { updateHTML(body, "", 'gpu-table'); empty.style.display = "block"; return; }
   empty.style.display = "none";
 
   // Index results by gpu label for easy lookup.
@@ -433,7 +444,7 @@ function renderGpuTable(data) {
   const idxSet = new Set([...Object.keys(utilM), ...Object.keys(memUtilM), ...Object.keys(memUsedM), ...Object.keys(memTotalM), ...Object.keys(tempM), ...Object.keys(powerM), ...Object.keys(fanM), ...Object.keys(smClockM), ...Object.keys(memClockM)]);
   const idxs = [...idxSet].sort((a, b) => Number(a) - Number(b));
 
-  body.innerHTML = idxs.map((g) => {
+  updateHTML(body, idxs.map((g) => {
     const u = utilM[g] ? parseFloat(utilM[g].value[1]) : 0;
     const barCls = u > 80 ? (u > 95 ? "crit" : "hot") : "";
     const metric = utilM[g]?.metric || {};
@@ -461,7 +472,7 @@ function renderGpuTable(data) {
       <td class="num">${sc != null ? fmt(sc,0)+" MHz" : "—"}</td>
       <td class="num">${mc != null ? fmt(mc,0)+" MHz" : "—"}</td>
     </tr>`;
-  }).join("");
+  }).join(""), 'gpu-table');
 }
 
 /* -- charts (Chart.js) -- */
