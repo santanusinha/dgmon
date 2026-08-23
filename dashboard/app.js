@@ -7,6 +7,41 @@ const PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2
 
 const state = { nodes: [], selected: null, charts: {}, timer: null, view: "cluster" };
 
+/* -- theme -- */
+function getThemeColors() {
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    text: cs.getPropertyValue("--chart-text").trim() || "#8a94a6",
+    grid: cs.getPropertyValue("--chart-grid").trim() || "rgba(138,148,166,0.18)",
+    tooltipBg: cs.getPropertyValue("--tooltip-bg").trim() || "rgba(255,255,255,0.95)",
+    tooltipTitle: cs.getPropertyValue("--tooltip-title").trim() || "#1a2233",
+    tooltipBody: cs.getPropertyValue("--tooltip-body").trim() || "#4b5563",
+    tooltipBorder: cs.getPropertyValue("--tooltip-border").trim() || "#e3e8ef",
+  };
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("dgmon-theme", theme);
+  // Destroy all existing Chart.js instances before rebuilding.
+  for (const id in state.charts) {
+    if (state.charts[id] && typeof state.charts[id].destroy === "function") {
+      state.charts[id].destroy();
+    }
+  }
+  state.charts = {};
+  refreshAll();
+}
+
+function setupThemeToggle() {
+  const saved = localStorage.getItem("dgmon-theme");
+  if (saved) document.documentElement.setAttribute("data-theme", saved);
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme");
+    applyTheme(current === "dark" ? "light" : "dark");
+  });
+}
+
 const fetchJSON = async (url, opts) => {
   const r = await fetch(url, opts);
   if (!r.ok) throw new Error(`${url} -> ${r.status}`);
@@ -15,8 +50,8 @@ const fetchJSON = async (url, opts) => {
 
 /* -- boot -- */
 async function init() {
+  setupThemeToggle();
   setupTabs();
-  await refreshNodes();
   setInterval(refreshNodes, 15000);
   await refreshAll();
   state.timer = setInterval(refreshAll, REFRESH_MS);
@@ -517,6 +552,7 @@ function createOrUpdateChart(def, resp, now) {
     return;
   }
 
+  const tc = getThemeColors();
   state.charts[def.id] = new Chart(canvas, {
     type: "line",
     data: { labels, datasets },
@@ -529,7 +565,7 @@ function createOrUpdateChart(def, resp, now) {
         legend: {
           position: "bottom",
           labels: {
-            color: "#8a94a6",
+            color: tc.text,
             font: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif", size: 11 },
             boxWidth: 10,
             boxHeight: 6,
@@ -540,10 +576,10 @@ function createOrUpdateChart(def, resp, now) {
         tooltip: {
           mode: "index",
           intersect: false,
-          backgroundColor: "rgba(255,255,255,0.95)",
-          titleColor: "#1a2233",
-          bodyColor: "#4b5563",
-          borderColor: "#e3e8ef",
+          backgroundColor: tc.tooltipBg,
+          titleColor: tc.tooltipTitle,
+          bodyColor: tc.tooltipBody,
+          borderColor: tc.tooltipBorder,
           borderWidth: 1,
           padding: 10,
           cornerRadius: 8,
@@ -555,21 +591,21 @@ function createOrUpdateChart(def, resp, now) {
         x: {
           type: "category",
           ticks: {
-            color: "#8a94a6",
+            color: tc.text,
             font: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif", size: 11 },
             maxTicksLimit: 8,
             maxRotation: 0,
           },
-          grid: { color: "rgba(138,148,166,0.18)", drawBorder: false },
+          grid: { color: tc.grid, drawBorder: false },
         },
         y: {
           beginAtZero: true,
           ticks: {
-            color: "#8a94a6",
+            color: tc.text,
             font: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif", size: 11 },
             maxTicksLimit: 6,
           },
-          grid: { color: "rgba(138,148,166,0.18)", drawBorder: false },
+          grid: { color: tc.grid, drawBorder: false },
         },
       },
     },
