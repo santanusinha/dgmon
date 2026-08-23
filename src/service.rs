@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standalone service mode: collect locally and expose HTTP endpoints.
+//! Also accepts pushes from remote nodes via POST /ingest.
 //!
 //! Use this on a single node that does both collection and serving.
 //! For multi-node clusters, use `dgmon server` + `dgmon push` instead.
@@ -20,14 +21,14 @@ use crate::storage::TsinkStore;
 
 /// Shared state for the service actix-web app.
 struct ServiceState {
-    store: Arc<Store>,
+    store: Arc<NodeStore>,
     http: AppState,
 }
 
-/// GET /snapshot — latest snapshot as JSON.
+/// GET /snapshot — all snapshots as a JSON array.
 async fn json(state: web::Data<ServiceState>) -> impl Responder {
-    let snap = state.store.latest();
-    match serde_json::to_string_pretty(&snap) {
+    let snaps = state.store.all();
+    match serde_json::to_string_pretty(&snaps) {
         Ok(json) => HttpResponse::Ok()
             .content_type("application/json")
             .body(json),
@@ -37,27 +38,42 @@ async fn json(state: web::Data<ServiceState>) -> impl Responder {
     }
 }
 
-/// GET /nodes — list of registered nodes (single node in service mode).
+/// GET /nodes — list of registered nodes.
 async fn nodes(state: web::Data<ServiceState>) -> impl Responder {
-    let snap = state.store.latest();
-    let info = serde_json::json!([{
-        "hostname": snap.host.hostname,
-        "gpus": snap.gpus.len() as u32,
-        "timestamp": snap.timestamp,
-    }]);
+    let nodes = state.store.node_list();
     HttpResponse::Ok()
         .content_type("application/json")
-        .body(serde_json::to_string_pretty(&info).unwrap_or_default())
+        .body(serde_json::to_string_pretty(&nodes).unwrap_or_default())
 }
 
-/// GET /metrics — Prometheus text format for the local node.
-/// GET /metrics — Prometheus text format for the local node.
+/// GET /metrics — Prometheus text format for all nodes.
 async fn metrics(state: web::Data<ServiceState>) -> impl Responder {
-    let snap = state.store.latest();
-    let body = http::render_prometheus(std::slice::from_ref(&snap));
+    let snaps = state.store.all();
+    let body = http::render_prometheus(&snaps);
     HttpResponse::Ok()
         .content_type("text/plain; version=0.0.4")
         .body(body)
+}
+
+/// POST /ingest — receive a snapshot push from a remote collector agent.
+async fn ingest(
+    state: web::Data<ServiceState>,
+    body: web::Json<Snapshot>,
+) -> impl Responder {
+    let snap = body.into_inner();
+    let hostname = snap.host.hostname.clone();
+    let n_gpus = snap.gpus.len();
+
+    // Write to tsink for historical storage.
+    if let Some(ref ts) = state.http.tsink {
+        if let Err(e) = ts.write_snapshot(&snap) {
+            tracing::warn!("tsink write failed for {hostname}: {e:#}");
+        }
+    }
+
+    state.store.put(hostname.clone(), snap);
+    tracing::debug!("ingested snapshot from {hostname}: {n_gpus} GPUs");
+    HttpResponse::Ok().body("ok\n")
 }
 
 /// Fallback 404 handler.
@@ -73,7 +89,7 @@ pub fn run(
     inference_servers: Vec<String>,
     interface_role_overrides: HashMap<String, String>,
 ) -> anyhow::Result<()> {
-    let store = Arc::new(Store::new(collector, interval, interface_role_overrides));
+    let store = Arc::new(NodeStore::new());
 
     // Open tsink time-series storage if a data directory is provided.
     let tsink: Option<Arc<TsinkStore>> = match data_dir {
@@ -88,12 +104,20 @@ pub fn run(
         }
     };
 
-    // Background collection loop: collect and write to tsink.
+    // Background collection loop: collect locally and write to store + tsink.
     let store_bg = Arc::clone(&store);
     let tsink_bg = tsink.clone();
     let inference_servers_bg = inference_servers.clone();
+    let interface_role_overrides_bg = interface_role_overrides.clone();
     std::thread::spawn(move || {
-        store_bg.collect_loop(tsink_bg, inference_servers_bg)
+        collect_loop(
+            store_bg,
+            tsink_bg,
+            collector,
+            interval,
+            inference_servers_bg,
+            interface_role_overrides_bg,
+        )
     });
 
     let service_state = web::Data::new(ServiceState {
@@ -101,7 +125,7 @@ pub fn run(
         http: AppState { tsink },
     });
 
-    // REST API state: expose the local store and tsink to /api/v1 handlers.
+    // REST API state: expose the node store and tsink to /api/v1 handlers.
     let api_state = web::Data::new(ApiState {
         snapshots: store.clone() as Arc<dyn SnapshotSource + Send + Sync>,
         tsink: service_state.http.tsink.clone(),
@@ -136,6 +160,7 @@ pub fn run(
                 .route("/nodes", web::get().to(nodes))
                 .route("/snapshot", web::get().to(json))
                 .route("/metrics", web::get().to(metrics))
+                .route("/ingest", web::post().to(ingest))
                 .route("/history", web::get().to(http::history))
                 .route("/metrics/list", web::get().to(http::metrics_list))
                 .route("/query", web::get().to(http::query))
@@ -181,115 +206,120 @@ pub fn run(
     })
 }
 
-impl SnapshotSource for Store {
-    fn all(&self) -> Vec<Snapshot> {
-        vec![self.latest()]
-    }
-}
-
-struct Store {
+/// Background collection loop: collect locally and store in the node store.
+fn collect_loop(
+    store: Arc<NodeStore>,
+    tsink: Option<Arc<TsinkStore>>,
     collector: Arc<dyn Collector>,
     interval: Duration,
+    inference_servers: Vec<String>,
     interface_role_overrides: HashMap<String, String>,
-    latest: std::sync::RwLock<Option<Snapshot>>,
+) {
+    // Build an async reqwest client for inference scraping.
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("failed to build HTTP client: {e}");
+            return;
+        }
+    };
+
+    // Build a tokio runtime for async inference collection.
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            tracing::error!("failed to build tokio runtime: {e}");
+            return;
+        }
+    };
+
+    loop {
+        let mut snap = match collector.collect() {
+            Ok(snap) => snap,
+            Err(e) => {
+                tracing::warn!("collection failed: {e:#}");
+                std::thread::sleep(interval);
+                continue;
+            }
+        };
+
+        // Apply per-interface role overrides from config.
+        for net in &mut snap.host.networks {
+            if let Some(role) = interface_role_overrides.get(&net.interface) {
+                net.role = role.clone();
+            }
+        }
+
+        // Scrape inference metrics asynchronously.
+        let inference_servers = inference_servers.clone();
+        snap.inference = rt.block_on(collect_inference(&client, &inference_servers));
+
+        let n = snap.gpus.len();
+        tracing::debug!("collected snapshot: {n} GPUs");
+
+        // Write to tsink for historical storage.
+        if let Some(ref ts) = tsink
+            && let Err(e) = ts.write_snapshot(&snap)
+        {
+            tracing::warn!("tsink write failed: {e:#}");
+        }
+
+        let hostname = snap.host.hostname.clone();
+        store.put(hostname, snap);
+        std::thread::sleep(interval);
+    }
 }
 
-impl Store {
-    fn new(
-        collector: Arc<dyn Collector>,
-        interval: Duration,
-        interface_role_overrides: HashMap<String, String>,
-    ) -> Self {
+// --- Multi-node store ---
+
+struct NodeStore {
+    nodes: std::sync::RwLock<HashMap<String, Snapshot>>,
+}
+
+impl NodeStore {
+    fn new() -> Self {
         Self {
-            collector,
-            interval,
-            interface_role_overrides,
-            latest: std::sync::RwLock::new(None),
+            nodes: std::sync::RwLock::new(HashMap::new()),
         }
     }
 
-    fn latest(&self) -> Snapshot {
-        self.latest.read().unwrap().clone().unwrap_or_else(|| {
-            Snapshot {
-                timestamp: chrono::Utc::now(),
-                host: crate::collector::HostSample {
-                    hostname: "pending".into(),
-                    cpu_usage_pct: 0.0,
-                    memory_used_mb: 0,
-                    memory_total_mb: 0,
-                    disk_used_gb: 0.0,
-                    disk_total_gb: 0.0,
-                    network_rx_bytes: 0,
-                    network_tx_bytes: 0,
-                    uptime_seconds: 0,
-                    cpu_cores: vec![],
-                    networks: vec![],
-                },
-                gpus: vec![],
-                inference: vec![],
-                extra: std::collections::HashMap::new(),
-            }
-        })
+    fn put(&self, hostname: String, snap: Snapshot) {
+        self.nodes.write().unwrap().insert(hostname, snap);
     }
 
-    fn collect_loop(&self, tsink: Option<Arc<TsinkStore>>, inference_servers: Vec<String>) {
-        // Build an async reqwest client for inference scraping.
-        let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(2))
-            .build()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!("failed to build HTTP client: {e}");
-                return;
-            }
-        };
-
-        // Build a tokio runtime for async inference collection.
-        let rt = match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(rt) => rt,
-            Err(e) => {
-                tracing::error!("failed to build tokio runtime: {e}");
-                return;
-            }
-        };
-
-        loop {
-            let mut snap = match self.collector.collect() {
-                Ok(snap) => snap,
-                Err(e) => {
-                    tracing::warn!("collection failed: {e:#}");
-                    std::thread::sleep(self.interval);
-                    continue;
-                }
-            };
-
-            // Apply per-interface role overrides from config.
-            for net in &mut snap.host.networks {
-                if let Some(role) = self.interface_role_overrides.get(&net.interface) {
-                    net.role = role.clone();
-                }
-            }
-
-            // Scrape inference metrics asynchronously.
-            let inference_servers = inference_servers.clone();
-            snap.inference = rt.block_on(collect_inference(&client, &inference_servers));
-
-            let n = snap.gpus.len();
-            tracing::debug!("collected snapshot: {n} GPUs");
-
-            // Write to tsink for historical storage.
-            if let Some(ref ts) = tsink
-                && let Err(e) = ts.write_snapshot(&snap)
-            {
-                tracing::warn!("tsink write failed: {e:#}");
-            }
-
-            *self.latest.write().unwrap() = Some(snap);
-            std::thread::sleep(self.interval);
-        }
+    fn all(&self) -> Vec<Snapshot> {
+        self.nodes.read().unwrap().values().cloned().collect()
     }
+
+    fn node_list(&self) -> Vec<NodeInfo> {
+        self.nodes
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(host, snap)| NodeInfo {
+                hostname: host.clone(),
+                gpus: snap.gpus.len() as u32,
+                timestamp: snap.timestamp,
+            })
+            .collect()
+    }
+}
+
+impl SnapshotSource for NodeStore {
+    fn all(&self) -> Vec<Snapshot> {
+        self.all()
+    }
+}
+
+#[derive(serde::Serialize)]
+struct NodeInfo {
+    hostname: String,
+    gpus: u32,
+    timestamp: chrono::DateTime<chrono::Utc>,
 }

@@ -6,10 +6,13 @@
 //!
 //! Discovery order:
 //! 1. Docker containers (bollard) — inspect running containers for
-//!    sglang/vLLM images and their published ports.
-//! 2. Process table (sysinfo) — look for sglang/vLLM processes and
+//!    sglang/vLLM images and their ports. Supports both bridge and
+//!    host networking modes. For host-networking, parses the command
+//!    line to find `--port` and `--master-addr` (multi-node vLLM).
+//! 2. Manual config targets from the collector config (override).
+//! 3. Process table (sysinfo) — look for sglang/vLLM processes and
 //!    their listening ports.
-//! 3. Manual config targets from the collector config.
+//! 4. netstat — shell out to find sglang/vLLM listening ports.
 //!
 //! If no inference server is found, the collector produces no inference
 //! metrics and does not fail the snapshot.
@@ -39,7 +42,13 @@ pub async fn collect_inference(
 ) -> Vec<InferenceSample> {
     let mut targets = Vec::new();
 
-    // 1. Manual config targets (highest priority).
+    // 1. Docker discovery via bollard (auto-detection, highest priority).
+    match discover_docker().await {
+        Ok(docker_targets) => targets.extend(docker_targets),
+        Err(e) => tracing::debug!("docker inference discovery failed: {e:#}"),
+    }
+
+    // 2. Manual config targets (override / fallback).
     for url in manual_targets {
         targets.push(InferenceTarget {
             base_url: url.clone(),
@@ -47,13 +56,7 @@ pub async fn collect_inference(
         });
     }
 
-    // 2. Docker discovery via bollard.
-    match discover_docker().await {
-        Ok(docker_targets) => targets.extend(docker_targets),
-        Err(e) => tracing::debug!("docker inference discovery failed: {e:#}"),
-    }
-
-    // 3. Process table fallback.
+    // 3. Process table fallback when Docker found nothing.
     if targets.is_empty() {
         match discover_processes() {
             Ok(proc_targets) => targets.extend(proc_targets),
@@ -183,19 +186,35 @@ async fn discover_docker() -> anyhow::Result<Vec<InferenceTarget>> {
             "sglang"
         };
 
-        // Find the published port. Inspect the container for port bindings.
+        // Inspect the container for port bindings and network mode.
         let id = c.id.clone().unwrap_or_default();
         let inspect = docker.inspect_container(&id, None).await?;
-        let port = extract_published_port(&inspect);
 
-        if let Some(port) = port {
+        // Try published ports first (bridge networking).
+        if let Some(port) = extract_published_port(&inspect) {
             targets.push(InferenceTarget {
                 base_url: format!("http://127.0.0.1:{port}"),
                 engine: engine.to_string(),
             });
+            continue;
+        }
+
+        // For host-networking containers, parse the command line to find
+        // the API port and the head node address (multi-node vLLM).
+        let net_mode = inspect
+            .host_config
+            .as_ref()
+            .and_then(|h| h.network_mode.as_deref());
+        if net_mode == Some("host") {
+            let port = extract_port_from_command(&inspect).unwrap_or(8000);
+            let host = extract_master_addr(&inspect).unwrap_or_else(|| "127.0.0.1".into());
+            targets.push(InferenceTarget {
+                base_url: format!("http://{host}:{port}"),
+                engine: engine.to_string(),
+            });
         } else {
             tracing::debug!(
-                "inference container {name} has no published port; skipping"
+                "inference container {name} has no discoverable port; skipping"
             );
         }
     }
@@ -212,6 +231,65 @@ fn extract_published_port(inspect: &bollard::models::ContainerInspectResponse) -
             }
         }
     }
+    None
+}
+
+/// Extract the API port (`--port`) from the container command line.
+/// Handles both direct array args and bash -c wrapped commands.
+/// Falls back to the vLLM/sglang default port 8000.
+fn extract_port_from_command(inspect: &bollard::models::ContainerInspectResponse) -> Option<u16> {
+    let cmd = inspect.config.as_ref()?.cmd.as_ref()?;
+
+    // Try direct array lookup first.
+    let mut i = 0;
+    while i < cmd.len() {
+        if cmd[i] == "--port" {
+            if let Some(p) = cmd.get(i + 1).and_then(|s| s.parse::<u16>().ok()) {
+                return Some(p);
+            }
+        }
+        i += 1;
+    }
+
+    // If the command is bash -c "...", search the joined string.
+    let joined = cmd.join(" ");
+    if let Some(pos) = joined.find("--port ") {
+        let after = &joined[pos + 7..];
+        if let Some(port_str) = after.split_whitespace().next() {
+            if let Ok(p) = port_str.parse::<u16>() {
+                return Some(p);
+            }
+        }
+    }
+
+    Some(8000)
+}
+
+/// Extract the head node address (`--master-addr`) from the container command
+/// line. Handles both direct array args and bash -c wrapped commands.
+/// This is used in multi-node vLLM deployments. Returns None for
+/// single-node setups, in which case 127.0.0.1 is the correct address.
+fn extract_master_addr(inspect: &bollard::models::ContainerInspectResponse) -> Option<String> {
+    let cmd = inspect.config.as_ref()?.cmd.as_ref()?;
+
+    // Try direct array lookup first.
+    let mut i = 0;
+    while i < cmd.len() {
+        if cmd[i] == "--master-addr" {
+            return cmd.get(i + 1).cloned();
+        }
+        i += 1;
+    }
+
+    // If the command is bash -c "...", search the joined string.
+    let joined = cmd.join(" ");
+    if let Some(pos) = joined.find("--master-addr ") {
+        let after = &joined[pos + 14..];
+        if let Some(addr) = after.split_whitespace().next() {
+            return Some(addr.to_string());
+        }
+    }
+
     None
 }
 

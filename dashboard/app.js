@@ -1,13 +1,14 @@
 // dgmon dashboard — app logic (Chart.js)
+// All data comes from the Prometheus-compatible API (/api/v1/) using PromQL.
 "use strict";
 
 const REFRESH_MS = 5000;
-const PALETTE = ["#22d3ee", "#34d399", "#fbbf24", "#f87171", "#a78bfa", "#67e8f9", "#fde68a", "#fca5a5"];
+const PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#ca8a04", "#be185d"];
 
-const state = { nodes: [], selected: null, snaps: [], charts: {}, timer: null };
+const state = { nodes: [], selected: null, charts: {}, timer: null };
 
-const fetchJSON = async (url) => {
-  const r = await fetch(url);
+const fetchJSON = async (url, opts) => {
+  const r = await fetch(url, opts);
   if (!r.ok) throw new Error(`${url} -> ${r.status}`);
   return r.json();
 };
@@ -23,10 +24,11 @@ async function init() {
 /* -- nodes -- */
 async function refreshNodes() {
   try {
-    state.nodes = await fetchJSON("/nodes");
+    const resp = await fetchJSON("/api/v1/label/hostname/values");
+    state.nodes = resp.data || [];
     renderNodeBar();
     document.getElementById("node-count").textContent = `${state.nodes.length} node${state.nodes.length === 1 ? "" : "s"}`;
-    if (!state.selected && state.nodes.length) state.selected = state.nodes[0].hostname;
+    if (!state.selected && state.nodes.length) state.selected = state.nodes[0];
     setStatus("online");
   } catch { setStatus("offline"); }
 }
@@ -34,7 +36,7 @@ async function refreshNodes() {
 function renderNodeBar() {
   const bar = document.getElementById("node-bar");
   bar.innerHTML = state.nodes.map((n) =>
-    `<button class="${n.hostname === state.selected ? "active" : ""}" data-host="${n.hostname}">${n.hostname}</button>`
+    `<button class="${n === state.selected ? "active" : ""}" data-host="${n}">${n}</button>`
   ).join("");
   bar.querySelectorAll("button").forEach((b) =>
     b.addEventListener("click", () => {
@@ -49,30 +51,80 @@ function renderNodeBar() {
 /* -- data refresh -- */
 async function refreshAll() {
   try {
-    const snaps = await fetchJSON("/snapshot");
-    state.snaps = Array.isArray(snaps) ? snaps : [snaps];
-    if (!state.selected && state.snaps.length) {
-      state.selected = state.snaps[0].host.hostname;
-      renderNodeBar();
-    }
-    renderHostCards();
-    renderGpuTable();
-    updateCharts();
+    const now = Date.now();
+    const start = now - 3600e3;
+    const step = 30000;
+    const host = state.selected || "";
+    const hostSel = host ? `{hostname="${host}"}` : "";
+
+    // Build one batch request with all instant and range queries.
+    const queries = [
+      // Host cards (instant).
+      { id: "cpu", expr: `dgmon_cpu_usage_pct${hostSel}` },
+      { id: "mem_used", expr: `dgmon_memory_used_mb${hostSel}` },
+      { id: "mem_total", expr: `dgmon_memory_total_mb${hostSel}` },
+      { id: "disk_used", expr: `dgmon_disk_used_gb${hostSel}` },
+      { id: "disk_total", expr: `dgmon_disk_total_gb${hostSel}` },
+      { id: "net_rx", expr: `dgmon_network_rx_bytes${hostSel}` },
+      { id: "net_tx", expr: `dgmon_network_tx_bytes${hostSel}` },
+      { id: "uptime", expr: `dgmon_uptime_seconds${hostSel}` },
+      // GPU table (instant).
+      { id: "gpu_util", expr: `dgmon_gpu_utilization${hostSel}` },
+      { id: "gpu_mem_util", expr: `dgmon_gpu_mem_utilization${hostSel}` },
+      { id: "gpu_temp", expr: `dgmon_gpu_temp_c${hostSel}` },
+      { id: "gpu_power", expr: `dgmon_gpu_power_w${hostSel}` },
+      { id: "gpu_fan", expr: `dgmon_gpu_fan_speed_pct${hostSel}` },
+      // Charts (range).
+      { id: "chart-cpu", expr: `dgmon_cpu_usage_pct${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-mem", expr: `dgmon_memory_used_mb${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-gpu", expr: `dgmon_gpu_utilization${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-temp", expr: `dgmon_gpu_temp_c${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+    ];
+
+    const resp = await fetchJSON("/api/v1/query_batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ queries }),
+    });
+
+    const data = resp.data || {};
+    renderHostCards(data);
+    renderGpuTable(data);
+    updateCharts(data, now);
     document.getElementById("refresh-time").textContent = new Date().toLocaleTimeString();
-  } catch { /* noop */ }
+  } catch (e) { console.warn("refreshAll:", e); }
 }
 
-function selSnap() { return state.snaps.find((s) => s.host.hostname === state.selected) || state.snaps[0]; }
+/* -- helpers for Prometheus vector results -- */
+function vectorResults(data, id) {
+  const q = data[id];
+  if (!q || q.resultType !== "vector") return [];
+  return q.result || [];
+}
+
+function firstValue(data, id) {
+  const r = vectorResults(data, id);
+  if (!r.length) return null;
+  const v = r[0].value;
+  return v ? parseFloat(v[1]) : null;
+}
 
 /* -- host cards -- */
-function renderHostCards() {
-  const snap = selSnap();
+function renderHostCards(data) {
   const host = document.getElementById("host-cards");
-  if (!snap) { host.innerHTML = '<div class="empty-note">No data yet\u2026</div>'; return; }
-  const h = snap.host;
-  const cpuPct = h.cpu_usage_pct;
-  const memPct = h.memory_total_mb ? Math.round((h.memory_used_mb / h.memory_total_mb) * 100) : 0;
-  const diskPct = h.disk_total_gb ? Math.round((h.disk_used_gb / h.disk_total_gb) * 100) : 0;
+  const cpuPct = firstValue(data, "cpu");
+  const memUsed = firstValue(data, "mem_used");
+  const memTotal = firstValue(data, "mem_total");
+  const diskUsed = firstValue(data, "disk_used");
+  const diskTotal = firstValue(data, "disk_total");
+  const netRx = firstValue(data, "net_rx");
+  const netTx = firstValue(data, "net_tx");
+  const uptime = firstValue(data, "uptime");
+
+  if (cpuPct == null) { host.innerHTML = '<div class="empty-note">No data yet\u2026</div>'; return; }
+
+  const memPct = memTotal ? Math.round((memUsed / memTotal) * 100) : 0;
+  const diskPct = diskTotal ? Math.round((diskUsed / diskTotal) * 100) : 0;
   host.innerHTML = `
     <div class="stat">
       <div class="k">CPU</div>
@@ -81,54 +133,82 @@ function renderHostCards() {
     </div>
     <div class="stat">
       <div class="k">Memory</div>
-      <div class="v">${fmt(h.memory_used_mb/1024,1)} <small>/ ${fmt(h.memory_total_mb/1024,0)} GiB</small></div>
+      <div class="v">${fmt(memUsed/1024,1)} <small>/ ${fmt(memTotal/1024,0)} GiB</small></div>
       <div class="bar${memPct>80?memPct>95?' crit':' warn':''}"><i style="width:${memPct}%"></i></div>
     </div>
     <div class="stat">
       <div class="k">Disk</div>
-      <div class="v">${fmt(h.disk_used_gb,0)} <small>/ ${fmt(h.disk_total_gb,0)} GiB</small></div>
+      <div class="v">${fmt(diskUsed,0)} <small>/ ${fmt(diskTotal,0)} GiB</small></div>
       <div class="bar${diskPct>80?diskPct>95?' crit':' warn':''}"><i style="width:${diskPct}%"></i></div>
     </div>
     <div class="stat">
       <div class="k">Network</div>
-      <div class="v">${fmt(h.network_rx_bytes/1e6,1)} <small>\u2193 / ${fmt(h.network_tx_bytes/1e6,1)} \u2191 MB/s</small></div>
+      <div class="v">${fmt(netRx/1e6,1)} <small>\u2193 / ${fmt(netTx/1e6,1)} \u2191 MB/s</small></div>
     </div>
     <div class="stat">
       <div class="k">Uptime</div>
-      <div class="v">${fmtUptime(h.uptime_seconds)}</div>
+      <div class="v">${fmtUptime(uptime)}</div>
     </div>`;
 }
 
 /* -- gpu table -- */
-function renderGpuTable() {
-  const snap = selSnap();
+function renderGpuTable(data) {
   const body = document.getElementById("gpu-table-body");
   const empty = document.getElementById("gpu-empty");
-  document.getElementById("gpu-count").textContent = snap && snap.gpus ? `${snap.gpus.length} GPU${snap.gpus.length!==1?'s':''}` : "\u2014";
-  if (!snap || !snap.gpus || !snap.gpus.length) { body.innerHTML = ""; empty.style.display = "block"; return; }
+  const util = vectorResults(data, "gpu_util");
+  const memUtil = vectorResults(data, "gpu_mem_util");
+  const temp = vectorResults(data, "gpu_temp");
+  const power = vectorResults(data, "gpu_power");
+  const fan = vectorResults(data, "gpu_fan");
+
+  document.getElementById("gpu-count").textContent = util.length ? `${util.length} GPU${util.length!==1?'s':''}` : "\u2014";
+  if (!util.length) { body.innerHTML = ""; empty.style.display = "block"; return; }
   empty.style.display = "none";
-  body.innerHTML = snap.gpus.map((g, i) => {
-    const u = g.utilization_gpu ?? 0;
+
+  // Index results by gpu label for easy lookup.
+  const byGpu = (arr) => {
+    const m = {};
+    for (const r of arr) {
+      const g = r.metric && r.metric.gpu;
+      if (g != null) m[g] = r;
+    }
+    return m;
+  };
+  const utilM = byGpu(util), memM = byGpu(memUtil), tempM = byGpu(temp), powerM = byGpu(power), fanM = byGpu(fan);
+
+  // Collect the union of gpu indices, sorted numerically.
+  const idxSet = new Set([...Object.keys(utilM), ...Object.keys(memM), ...Object.keys(tempM), ...Object.keys(powerM), ...Object.keys(fanM)]);
+  const idxs = [...idxSet].sort((a, b) => Number(a) - Number(b));
+
+  body.innerHTML = idxs.map((g) => {
+    const u = utilM[g] ? parseFloat(utilM[g].value[1]) : 0;
     const barCls = u > 80 ? (u > 95 ? "crit" : "hot") : "";
+    const metric = utilM[g]?.metric || {};
+    const model = metric.model || "\u2014";
+    const uuid = metric.uuid || "\u2014";
+    const mem = memM[g] ? parseFloat(memM[g].value[1]) : null;
+    const t = tempM[g] ? parseFloat(tempM[g].value[1]) : null;
+    const p = powerM[g] ? parseFloat(powerM[g].value[1]) : null;
+    const f = fanM[g] ? parseFloat(fanM[g].value[1]) : null;
     return `<tr>
-      <td class="idx">${i}</td>
-      <td>${esc(g.name)}</td>
-      <td style="font-size:10px;color:var(--txt-3)">${esc(g.uuid.slice(0,20))}\u2026</td>
-      <td class="num"><span class="bar ${barCls}"><i style="width:${u}%"></i></span>${u}%</td>
-      <td class="num">${g.utilization_memory ?? "\u2014"}%</td>
-      <td class="num">${g.temperature_c ?? "\u2014"}\u00b0</td>
-      <td class="num">${g.power_w ?? "\u2014"}</td>
-      <td class="num">${g.fan_speed_pct ?? "\u2014"}%</td>
+      <td class="idx">${g}</td>
+      <td>${esc(model)}</td>
+      <td style="font-size:10px;color:var(--txt-3)">${esc(uuid.slice(0,20))}\u2026</td>
+      <td class="num"><span class="bar ${barCls}"><i style="width:${u}%"></i></span>${fmt(u,0)}%</td>
+      <td class="num">${mem != null ? fmt(mem,0)+"%" : "\u2014"}</td>
+      <td class="num">${t != null ? fmt(t,0)+"\u00b0" : "\u2014"}</td>
+      <td class="num">${p != null ? fmt(p,0) : "\u2014"}</td>
+      <td class="num">${f != null ? fmt(f,0)+"%" : "\u2014"}</td>
     </tr>`;
   }).join("");
 }
 
 /* -- charts (Chart.js) -- */
 const CHART_DEFS = [
-  { id: "chart-cpu", metric: "dgmon_cpu_usage_pct", nowId: "now-cpu", label: "CPU %", unit: "%" },
-  { id: "chart-mem", metric: "dgmon_memory_used_mb", nowId: "now-mem", label: "Mem MB", unit: " MB" },
-  { id: "chart-gpu", metric: "dgmon_gpu_utilization", nowId: "now-gpu", label: "GPU %", unit: "%" },
-  { id: "chart-temp", metric: "dgmon_gpu_temp_c", nowId: "now-temp", label: "\u00b0C", unit: "\u00b0" },
+  { id: "chart-cpu", qid: "chart-cpu", nowId: "now-cpu", label: "CPU %", unit: "%" },
+  { id: "chart-mem", qid: "chart-mem", nowId: "now-mem", label: "Mem MB", unit: " MB" },
+  { id: "chart-gpu", qid: "chart-gpu", nowId: "now-gpu", label: "GPU %", unit: "%" },
+  { id: "chart-temp", qid: "chart-temp", nowId: "now-temp", label: "\u00b0C", unit: "\u00b0" },
 ];
 
 function createOrUpdateChart(def, resp, now) {
@@ -137,7 +217,7 @@ function createOrUpdateChart(def, resp, now) {
   const canvas = el.querySelector("canvas");
   if (!canvas) return;
 
-  const seriesList = resp.result_type === "matrix" ? resp.result : [];
+  const seriesList = resp && resp.resultType === "matrix" ? resp.result : [];
   if (!seriesList || !seriesList.length) return;
 
   // Limit to first 4 GPU series
@@ -158,11 +238,11 @@ function createOrUpdateChart(def, resp, now) {
 
   // Build datasets
   const datasets = sel.map((s, si) => {
-    const map = new Map(s.samples.map(([ts, v]) => [Math.floor(ts / 1000), v]));
-    const data = times.map((t) => map.has(t / 1000) ? map.get(t / 1000) : null);
-    const lbl = s.labels ? s.labels.filter(([k]) => k !== "hostname").map(([k, v]) => v).join(" ") : "";
+    const map = new Map(s.values.map(([ts, v]) => [Math.floor(ts), v]));
+    const data = times.map((t) => map.has(t / 1000) ? parseFloat(map.get(t / 1000)) : null);
+    const lbl = s.metric ? Object.entries(s.metric).filter(([k]) => k !== "__name__" && k !== "hostname").map(([, v]) => v).join(" ") : "";
     return {
-      label: lbl || s.metric,
+      label: lbl || (s.metric && s.metric.__name__) || "",
       data,
       borderColor: PALETTE[si % PALETTE.length],
       backgroundColor: PALETTE[si % PALETTE.length] + "18",
@@ -178,8 +258,8 @@ function createOrUpdateChart(def, resp, now) {
   // Update "now" indicator
   const nowEl = document.getElementById(def.nowId);
   if (nowEl && sel.length) {
-    const last = sel[0].samples[sel[0].samples.length - 1];
-    if (last) nowEl.textContent = `${last[1]}${def.unit}`;
+    const last = sel[0].values[sel[0].values.length - 1];
+    if (last) nowEl.textContent = `${parseFloat(last[1]).toFixed(1)}${def.unit}`;
   }
 
   if (state.charts[def.id]) {
@@ -192,7 +272,7 @@ function createOrUpdateChart(def, resp, now) {
 
   state.charts[def.id] = new Chart(canvas, {
     type: "line",
-    data: { labels, datasets },
+    { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -202,8 +282,8 @@ function createOrUpdateChart(def, resp, now) {
         legend: {
           position: "bottom",
           labels: {
-            color: "#94a3bf",
-            font: { family: "ui-monospace, SF Mono, monospace", size: 10 },
+            color: "#8a94a6",
+            font: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif", size: 11 },
             boxWidth: 10,
             boxHeight: 6,
             padding: 8,
@@ -213,53 +293,47 @@ function createOrUpdateChart(def, resp, now) {
         tooltip: {
           mode: "index",
           intersect: false,
-          backgroundColor: "rgba(12,16,26,0.92)",
-          titleColor: "#e6edf7",
-          bodyColor: "#94a3bf",
-          borderColor: "#1c2740",
+          backgroundColor: "rgba(255,255,255,0.95)",
+          titleColor: "#1a2233",
+          bodyColor: "#4b5563",
+          borderColor: "#e3e8ef",
           borderWidth: 1,
           padding: 10,
           cornerRadius: 8,
-          bodyFont: { family: "ui-monospace, SF Mono, monospace", size: 11 },
-          titleFont: { family: "ui-monospace, SF Mono, monospace", size: 11 },
+          bodyFont: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif", size: 11 },
+          titleFont: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif", size: 11 },
         },
       },
       scales: {
         x: {
           type: "category",
           ticks: {
-            color: "#5c6b8a",
-            font: { family: "ui-monospace, SF Mono, monospace", size: 10 },
+            color: "#8a94a6",
+            font: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif", size: 11 },
             maxTicksLimit: 8,
             maxRotation: 0,
           },
-          grid: { color: "rgba(92,107,138,0.15)", drawBorder: false },
+          grid: { color: "rgba(138,148,166,0.18)", drawBorder: false },
         },
         y: {
           beginAtZero: true,
           ticks: {
-            color: "#5c6b8a",
-            font: { family: "ui-monospace, SF Mono, monospace", size: 10 },
+            color: "#8a94a6",
+            font: { family: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif", size: 11 },
             maxTicksLimit: 6,
           },
-          grid: { color: "rgba(92,107,138,0.15)", drawBorder: false },
+          grid: { color: "rgba(138,148,166,0.18)", drawBorder: false },
         },
       },
     },
   });
 }
 
-async function updateCharts() {
-  const now = Date.now();
-  const start = now - 3600e3;
-  const step = 30000;
-  const host = state.selected || "";
+function updateCharts(data, now) {
   for (const def of CHART_DEFS) {
-    try {
-      const q = host ? `${def.metric}{hostname="${host}"}` : def.metric;
-      const resp = await fetchJSON(`/query?q=${encodeURIComponent(q)}&start=${start}&end=${now}&step=${step}`);
-      createOrUpdateChart(def, resp, now);
-    } catch (e) { console.warn(`chart ${def.id}:`, e); }
+    const resp = data[def.qid];
+    if (!resp) continue;
+    createOrUpdateChart(def, resp, now);
   }
 }
 
