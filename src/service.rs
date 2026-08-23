@@ -257,8 +257,12 @@ fn collect_loop(
         }
 
         // Scrape inference metrics asynchronously.
-        let inference_servers = inference_servers.clone();
-        snap.inference = rt.block_on(collect_inference(&client, &inference_servers));
+        // Only scrape when the collector did not already provide inference
+        // data (e.g. the mock collector supplies synthetic inference samples).
+        if snap.inference.is_empty() {
+            let inference_servers = inference_servers.clone();
+            snap.inference = rt.block_on(collect_inference(&client, &inference_servers));
+        }
 
         let n = snap.gpus.len();
         tracing::debug!("collected snapshot: {n} GPUs");

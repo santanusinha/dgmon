@@ -16,82 +16,169 @@
     <span id="refresh-time" class="badge">—</span>
   </header>
 
+  <nav class="tabs">
+    <button class="tab active" data-view="cluster">Cluster</button>
+    <button class="tab" data-view="host">Host</button>
+  </nav>
+
   <main class="wrap">
 
-    <section>
-      <div class="section-head">
-        <h2>Node</h2>
-        <span class="hint" id="sel-host">—</span>
-      </div>
-      <div id="node-bar" class="node-switch"></div>
-    </section>
+    <!-- ═══════════ CLUSTER VIEW (default) ═══════════ -->
+    <div id="view-cluster" class="view">
 
-    <section>
-      <div class="section-head">
-        <h2>Host Overview</h2>
-        <span class="hint">selected node</span>
-      </div>
-      <div id="host-cards" class="stat-grid"></div>
-    </section>
+      <!-- Cluster overview stat cards -->
+      <section>
+        <div class="section-head">
+          <h2>Cluster Overview</h2>
+          <span class="hint">all nodes aggregated</span>
+        </div>
+        <div id="cluster-cards" class="stat-grid"></div>
+      </section>
 
-    <section>
-      <div class="section-head">
-        <h2>Telemetry</h2>
-        <span class="hint">last 60 min · 30s step</span>
-      </div>
-      <div class="chart-grid">
-        <div class="chart-card">
-          <div class="t"><span>CPU Usage</span><span class="now" id="now-cpu">—</span></div>
-          <div id="chart-cpu" class="cv"><canvas width="400" height="200"></canvas></div>
+      <!-- Inference overview -->
+      <section>
+        <div class="section-head">
+          <h2>Inference</h2>
+          <span class="hint">all engines · last 60 min</span>
         </div>
-        <div class="chart-card">
-          <div class="t"><span>Memory Used</span><span class="now" id="now-mem">—</span></div>
-          <div id="chart-mem" class="cv"><canvas width="400" height="200"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="t"><span>GPU Utilization</span><span class="now" id="now-gpu">—</span></div>
-          <div id="chart-gpu" class="cv"><canvas width="400" height="200"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="t"><span>GPU Temperature</span><span class="now" id="now-temp">—</span></div>
-          <div id="chart-temp" class="cv"><canvas width="400" height="200"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="t"><span>GPU Memory Used</span><span class="now" id="now-gpu-mem">—</span></div>
-          <div id="chart-gpu-mem" class="cv"><canvas width="400" height="200"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="t"><span>GPU Power</span><span class="now" id="now-gpu-power">—</span></div>
-          <div id="chart-gpu-power" class="cv"><canvas width="400" height="200"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="t"><span>SM Clock</span><span class="now" id="now-sm-clock">—</span></div>
-          <div id="chart-sm-clock" class="cv"><canvas width="400" height="200"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="t"><span>Mem Clock</span><span class="now" id="now-mem-clock">—</span></div>
-          <div id="chart-mem-clock" class="cv"><canvas width="400" height="200"></canvas></div>
-        </div>
-    </section>
+        <div id="inference-cards" class="stat-grid"></div>
+      </section>
 
-    <section>
-      <div class="section-head">
-        <h2>GPUs</h2>
-        <span class="hint" id="gpu-count">—</span>
-      </div>
-      <div class="gpu-card">
-        <table class="gpu">
-          <thead>
-            <tr>
-              <th>#</th><th>Model</th><th>UUID</th><th>Util</th><th>Mem Util</th>
-              <th>Mem Used</th><th>Temp</th><th>Power</th><th>Fan</th><th>SM Clock</th><th>Mem Clock</th>
-            </tr>
-          </thead>
-          <tbody id="gpu-table-body"></tbody>
-        </table>
-        <div id="gpu-empty" class="empty-note">No GPU data yet — waiting for first snapshot…</div>
-      </div>
-    </section>
+      <!-- Cluster charts -->
+      <section>
+        <div class="section-head">
+          <h2>Cluster Telemetry</h2>
+          <span class="hint">last 60 min · 30s step</span>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <div class="t"><span>GPU Utilization</span><span class="now" id="now-cgpu">—</span></div>
+            <div id="chart-cgpu" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>GPU Memory Used</span><span class="now" id="now-cgpu-mem">—</span></div>
+            <div id="chart-cgpu-mem" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>Tokens/sec</span><span class="now" id="now-tok">—</span></div>
+            <div id="chart-tok" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>Input Tokens/sec</span><span class="now" id="now-in-tok">—</span></div>
+            <div id="chart-in-tok" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>TTFT p50</span><span class="now" id="now-ttft">—</span></div>
+            <div id="chart-ttft" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>Inter-token Latency p50</span><span class="now" id="now-itl">—</span></div>
+            <div id="chart-itl" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Per-node table -->
+      <section>
+        <div class="section-head">
+          <h2>Nodes</h2>
+          <span class="hint" id="cluster-node-count">—</span>
+        </div>
+        <div class="gpu-card">
+          <table class="gpu">
+            <thead>
+              <tr>
+                <th>Node</th><th>GPUs</th><th>GPU Util</th><th>GPU Mem</th>
+                <th>Tok/s</th><th>In Tok/s</th><th>Req Run</th><th>TTFT p50</th>
+              </tr>
+            </thead>
+            <tbody id="cluster-table-body"></tbody>
+          </table>
+          <div id="cluster-empty" class="empty-note">No cluster data yet — waiting for first snapshot…</div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ═══════════ HOST VIEW (tab) ═══════════ -->
+    <div id="view-host" class="view" hidden>
+
+      <section>
+        <div class="section-head">
+          <h2>Node</h2>
+          <span class="hint" id="sel-host">—</span>
+        </div>
+        <div id="node-bar" class="node-switch"></div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Host Overview</h2>
+          <span class="hint">selected node</span>
+        </div>
+        <div id="host-cards" class="stat-grid"></div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Telemetry</h2>
+          <span class="hint">last 60 min · 30s step</span>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <div class="t"><span>CPU Usage</span><span class="now" id="now-cpu">—</span></div>
+            <div id="chart-cpu" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>Memory Used</span><span class="now" id="now-mem">—</span></div>
+            <div id="chart-mem" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>GPU Utilization</span><span class="now" id="now-gpu">—</span></div>
+            <div id="chart-gpu" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>GPU Temperature</span><span class="now" id="now-temp">—</span></div>
+            <div id="chart-temp" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>GPU Memory Used</span><span class="now" id="now-gpu-mem">—</span></div>
+            <div id="chart-gpu-mem" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>GPU Power</span><span class="now" id="now-gpu-power">—</span></div>
+            <div id="chart-gpu-power" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>SM Clock</span><span class="now" id="now-sm-clock">—</span></div>
+            <div id="chart-sm-clock" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="t"><span>Mem Clock</span><span class="now" id="now-mem-clock">—</span></div>
+            <div id="chart-mem-clock" class="cv"><canvas width="400" height="200"></canvas></div>
+          </div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>GPUs</h2>
+          <span class="hint" id="gpu-count">—</span>
+        </div>
+        <div class="gpu-card">
+          <table class="gpu">
+            <thead>
+              <tr>
+                <th>#</th><th>Model</th><th>UUID</th><th>Util</th><th>Mem Util</th>
+                <th>Mem Used</th><th>Temp</th><th>Power</th><th>Fan</th><th>SM Clock</th><th>Mem Clock</th>
+              </tr>
+            </thead>
+            <tbody id="gpu-table-body"></tbody>
+          </table>
+          <div id="gpu-empty" class="empty-note">No GPU data yet — waiting for first snapshot…</div>
+        </div>
+      </section>
+
+    </div>
 
   </main>
 

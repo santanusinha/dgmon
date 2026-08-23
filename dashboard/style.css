@@ -229,3 +229,33 @@ canvas.chart { display: block; }
 .chart-card:nth-child(2) { animation-delay: .05s }
 .chart-card:nth-child(3) { animation-delay: .1s }
 .chart-card:nth-child(4) { animation-delay: .15s }
+
+/* ── tabs ── */
+.tabs {
+  display: flex; gap: 4px;
+  padding: 10px 32px 0;
+  max-width: 1320px; margin: 0 auto;
+}
+.tab {
+  font: inherit; font-size: 13px; font-weight: 500;
+  color: var(--txt-2);
+  padding: 8px 18px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.tab:hover { color: var(--txt-1); background: var(--bg-1); }
+.tab.active {
+  color: var(--accent);
+  background: var(--bg-1);
+  border-color: var(--line-1);
+  border-bottom-color: var(--bg-1);
+  box-shadow: var(--shadow-sm);
+}
+@media (max-width: 640px) { .tabs { padding: 10px 16px 0; } }
+
+/* ── cluster per-node table ── */
+#cluster-table-body td.idx { color: var(--accent); font-weight: 600; }
+#cluster-table-body td.num { text-align: right; }

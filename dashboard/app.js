@@ -5,7 +5,7 @@
 const REFRESH_MS = 5000;
 const PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#ca8a04", "#be185d"];
 
-const state = { nodes: [], selected: null, charts: {}, timer: null };
+const state = { nodes: [], selected: null, charts: {}, timer: null, view: "cluster" };
 
 const fetchJSON = async (url, opts) => {
   const r = await fetch(url, opts);
@@ -15,10 +15,23 @@ const fetchJSON = async (url, opts) => {
 
 /* -- boot -- */
 async function init() {
+  setupTabs();
   await refreshNodes();
   setInterval(refreshNodes, 15000);
   await refreshAll();
   state.timer = setInterval(refreshAll, REFRESH_MS);
+}
+
+/* -- tabs -- */
+function setupTabs() {
+  document.querySelectorAll(".tab").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      state.view = btn.dataset.view;
+      document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
+      document.getElementById("view-cluster").hidden = state.view !== "cluster";
+      document.getElementById("view-host").hidden = state.view !== "host";
+    })
+  );
 }
 
 /* -- nodes -- */
@@ -59,7 +72,36 @@ async function refreshAll() {
 
     // Build one batch request with all instant and range queries.
     const queries = [
-      // Host cards (instant).
+      // ── Cluster overview (instant) ──
+      { id: "cl_gpu_util", expr: `avg(dgmon_gpu_utilization)` },
+      { id: "cl_gpu_mem_used", expr: `sum(dgmon_gpu_memory_used_mb)` },
+      { id: "cl_gpu_mem_total", expr: `sum(dgmon_gpu_memory_total_mb)` },
+      { id: "cl_gpu_count", expr: `count(dgmon_gpu_utilization)` },
+      { id: "cl_cpu", expr: `avg(dgmon_cpu_usage_pct)` },
+      { id: "cl_mem_used", expr: `sum(dgmon_memory_used_mb)` },
+      { id: "cl_mem_total", expr: `sum(dgmon_memory_total_mb)` },
+      { id: "cl_net_rx", expr: `sum(dgmon_network_rx_bytes)` },
+      { id: "cl_net_tx", expr: `sum(dgmon_network_tx_bytes)` },
+      // ── Inference overview (instant) ──
+      { id: "inf_running", expr: `sum(dgmon_inference_num_requests_running)` },
+      { id: "inf_waiting", expr: `sum(dgmon_inference_num_requests_waiting)` },
+      { id: "inf_kv_cache", expr: `avg(dgmon_inference_kv_cache_usage_perc) * 100` },
+      { id: "inf_tok_sec", expr: `sum(rate(dgmon_inference_generation_tokens_total[1m]))` },
+      { id: "inf_in_tok_sec", expr: `sum(rate(dgmon_inference_prompt_tokens_total[1m]))` },
+      { id: "inf_ttft_p50", expr: `histogram_quantile(0.5, sum by (le) (rate(dgmon_inference_time_to_first_token_seconds_bucket[5m])))` },
+      { id: "inf_ttft_p95", expr: `histogram_quantile(0.95, sum by (le) (rate(dgmon_inference_time_to_first_token_seconds_bucket[5m])))` },
+      { id: "inf_itl_p50", expr: `histogram_quantile(0.5, sum by (le) (rate(dgmon_inference_inter_token_latency_seconds_bucket[5m])))` },
+      { id: "inf_success", expr: `sum(dgmon_inference_request_success_total)` },
+      // ── Per-node table (instant) ──
+      { id: "node_gpu_util", expr: `avg by (hostname) (dgmon_gpu_utilization)` },
+      { id: "node_gpu_mem_used", expr: `sum by (hostname) (dgmon_gpu_memory_used_mb)` },
+      { id: "node_gpu_mem_total", expr: `sum by (hostname) (dgmon_gpu_memory_total_mb)` },
+      { id: "node_gpu_count", expr: `count by (hostname) (dgmon_gpu_utilization)` },
+      { id: "node_tok_sec", expr: `sum by (hostname) (rate(dgmon_inference_generation_tokens_total[1m]))` },
+      { id: "node_in_tok_sec", expr: `sum by (hostname) (rate(dgmon_inference_prompt_tokens_total[1m]))` },
+      { id: "node_req_run", expr: `sum by (hostname) (dgmon_inference_num_requests_running)` },
+      { id: "node_ttft", expr: `histogram_quantile(0.5, sum by (le, hostname) (rate(dgmon_inference_time_to_first_token_seconds_bucket[5m])))` },
+      // ── Host cards (instant) ──
       { id: "cpu", expr: `dgmon_cpu_usage_pct${hostSel}` },
       { id: "mem_used", expr: `dgmon_memory_used_mb${hostSel}` },
       { id: "mem_total", expr: `dgmon_memory_total_mb${hostSel}` },
@@ -78,7 +120,14 @@ async function refreshAll() {
       { id: "gpu_fan", expr: `dgmon_gpu_fan_speed_pct${hostSel}` },
       { id: "gpu_sm_clock", expr: `dgmon_gpu_sm_clock_mhz${hostSel}` },
       { id: "gpu_mem_clock", expr: `dgmon_gpu_mem_clock_mhz${hostSel}` },
-      // Charts (range).
+      // ── Cluster charts (range) ──
+      { id: "chart-cgpu", expr: `avg(dgmon_gpu_utilization)`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-cgpu-mem", expr: `sum(dgmon_gpu_memory_used_mb)`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-tok", expr: `sum(rate(dgmon_inference_generation_tokens_total[1m]))`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-in-tok", expr: `sum(rate(dgmon_inference_prompt_tokens_total[1m]))`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-ttft", expr: `histogram_quantile(0.5, sum by (le) (rate(dgmon_inference_time_to_first_token_seconds_bucket[5m])))`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      { id: "chart-itl", expr: `histogram_quantile(0.5, sum by (le) (rate(dgmon_inference_inter_token_latency_seconds_bucket[5m])))`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
+      // ── Host charts (range) ──
       { id: "chart-cpu", expr: `dgmon_cpu_usage_pct${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
       { id: "chart-mem", expr: `dgmon_memory_used_mb${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
       { id: "chart-gpu", expr: `dgmon_gpu_utilization${hostSel}`, range: { start: start / 1000, end: now / 1000, step: step / 1000 } },
@@ -96,6 +145,9 @@ async function refreshAll() {
     });
 
     const data = resp.data || {};
+    renderClusterCards(data);
+    renderInferenceCards(data);
+    renderClusterTable(data);
     renderHostCards(data);
     renderGpuTable(data);
     updateCharts(data, now);
@@ -117,6 +169,159 @@ function firstValue(data, id) {
   return v ? parseFloat(v[1]) : null;
 }
 
+/* ── cluster overview cards ── */
+function renderClusterCards(data) {
+  const el = document.getElementById("cluster-cards");
+  const gpuUtil = firstValue(data, "cl_gpu_util");
+  const gpuMemUsed = firstValue(data, "cl_gpu_mem_used");
+  const gpuMemTotal = firstValue(data, "cl_gpu_mem_total");
+  const gpuCount = firstValue(data, "cl_gpu_count");
+  const cpu = firstValue(data, "cl_cpu");
+  const memUsed = firstValue(data, "cl_mem_used");
+  const memTotal = firstValue(data, "cl_mem_total");
+  const netRx = firstValue(data, "cl_net_rx");
+  const netTx = firstValue(data, "cl_net_tx");
+
+  if (gpuUtil == null) { el.innerHTML = '<div class="empty-note">No data yet…</div>'; return; }
+
+  const memPct = gpuMemTotal ? Math.round((gpuMemUsed / gpuMemTotal) * 100) : 0;
+  const sysMemPct = memTotal ? Math.round((memUsed / memTotal) * 100) : 0;
+  el.innerHTML = `
+    <div class="stat">
+      <div class="k">GPUs</div>
+      <div class="v">${fmt(gpuCount,0)}</div>
+    </div>
+    <div class="stat">
+      <div class="k">GPU Util</div>
+      <div class="v">${fmt(gpuUtil,1)}% <small>avg</small></div>
+      <div class="bar${gpuUtil>80?gpuUtil>95?' crit':' warn':''}"><i style="width:${gpuUtil}%"></i></div>
+    </div>
+    <div class="stat">
+      <div class="k">GPU Memory</div>
+      <div class="v">${fmt(gpuMemUsed/1024,1)} <small>/ ${fmt(gpuMemTotal/1024,0)} GiB</small></div>
+      <div class="bar${memPct>80?memPct>95?' crit':' warn':''}"><i style="width:${memPct}%"></i></div>
+    </div>
+    <div class="stat">
+      <div class="k">CPU</div>
+      <div class="v">${fmt(cpu,1)}% <small>avg</small></div>
+      <div class="bar${cpu>80?cpu>95?' crit':' warn':''}"><i style="width:${cpu}%"></i></div>
+    </div>
+    <div class="stat">
+      <div class="k">System Memory</div>
+      <div class="v">${fmt(memUsed/1024,1)} <small>/ ${fmt(memTotal/1024,0)} GiB</small></div>
+      <div class="bar${sysMemPct>80?sysMemPct>95?' crit':' warn':''}"><i style="width:${sysMemPct}%"></i></div>
+    </div>
+    <div class="stat">
+      <div class="k">Network</div>
+      <div class="v">${fmt(netRx/1e6,1)} <small>↓ / ${fmt(netTx/1e6,1)} ↑ MB/s</small></div>
+    </div>`;
+}
+
+/* ── inference overview cards ── */
+function renderInferenceCards(data) {
+  const el = document.getElementById("inference-cards");
+  const running = firstValue(data, "inf_running");
+  const waiting = firstValue(data, "inf_waiting");
+  const kvCache = firstValue(data, "inf_kv_cache");
+  const tokSec = firstValue(data, "inf_tok_sec");
+  const inTokSec = firstValue(data, "inf_in_tok_sec");
+  const ttftP50 = firstValue(data, "inf_ttft_p50");
+  const ttftP95 = firstValue(data, "inf_ttft_p95");
+  const itlP50 = firstValue(data, "inf_itl_p50");
+  const success = firstValue(data, "inf_success");
+
+  if (running == null && tokSec == null) { el.innerHTML = '<div class="empty-note">No inference data yet…</div>'; return; }
+
+  el.innerHTML = `
+    <div class="stat">
+      <div class="k">Requests Running</div>
+      <div class="v">${fmt(running,0)}</div>
+    </div>
+    <div class="stat">
+      <div class="k">Requests Waiting</div>
+      <div class="v">${fmt(waiting,0)}</div>
+    </div>
+    <div class="stat">
+      <div class="k">Output Tokens/s</div>
+      <div class="v">${fmt(tokSec,1)} <small>tok/s</small></div>
+    </div>
+    <div class="stat">
+      <div class="k">Input Tokens/s</div>
+      <div class="v">${fmt(inTokSec,1)} <small>tok/s</small></div>
+    </div>
+    <div class="stat">
+      <div class="k">TTFT p50</div>
+      <div class="v">${fmt(ttftP50,3)}s</div>
+    </div>
+    <div class="stat">
+      <div class="k">TTFT p95</div>
+      <div class="v">${fmt(ttftP95,3)}s</div>
+    </div>
+    <div class="stat">
+      <div class="k">Inter-token Latency p50</div>
+      <div class="v">${fmt(itlP50,3)}s</div>
+    </div>
+    <div class="stat">
+      <div class="k">KV Cache</div>
+      <div class="v">${fmt(kvCache,1)}%</div>
+      <div class="bar${kvCache>80?kvCache>95?' crit':' warn':''}"><i style="width:${kvCache}%"></i></div>
+    </div>`;
+}
+
+/* ── cluster per-node table ── */
+function renderClusterTable(data) {
+  const body = document.getElementById("cluster-table-body");
+  const empty = document.getElementById("cluster-empty");
+  const gpuUtil = vectorResults(data, "node_gpu_util");
+  const gpuMemUsed = vectorResults(data, "node_gpu_mem_used");
+  const gpuMemTotal = vectorResults(data, "node_gpu_mem_total");
+  const gpuCount = vectorResults(data, "node_gpu_count");
+  const tokSec = vectorResults(data, "node_tok_sec");
+  const inTokSec = vectorResults(data, "node_in_tok_sec");
+  const reqRun = vectorResults(data, "node_req_run");
+  const ttft = vectorResults(data, "node_ttft");
+
+  document.getElementById("cluster-node-count").textContent = gpuUtil.length ? `${gpuUtil.length} node${gpuUtil.length!==1?'s':''}` : "—";
+  if (!gpuUtil.length) { body.innerHTML = ""; empty.style.display = "block"; return; }
+  empty.style.display = "none";
+
+  // Index by hostname.
+  const byHost = (arr) => {
+    const m = {};
+    for (const r of arr) {
+      const h = r.metric && r.metric.hostname;
+      if (h != null) m[h] = r;
+    }
+    return m;
+  };
+  const utilM = byHost(gpuUtil), memUsedM = byHost(gpuMemUsed), memTotalM = byHost(gpuMemTotal);
+  const countM = byHost(gpuCount), tokM = byHost(tokSec), inTokM = byHost(inTokSec), reqM = byHost(reqRun), ttftM = byHost(ttft);
+
+  const hosts = [...new Set([...Object.keys(utilM), ...Object.keys(memUsedM), ...Object.keys(memTotalM), ...Object.keys(countM), ...Object.keys(tokM), ...Object.keys(inTokM), ...Object.keys(reqM), ...Object.keys(ttftM)])].sort();
+
+  body.innerHTML = hosts.map((h) => {
+    const u = utilM[h] ? parseFloat(utilM[h].value[1]) : null;
+    const mu = memUsedM[h] ? parseFloat(memUsedM[h].value[1]) : null;
+    const mt = memTotalM[h] ? parseFloat(memTotalM[h].value[1]) : null;
+    const gc = countM[h] ? parseFloat(countM[h].value[1]) : null;
+    const ts = tokM[h] ? parseFloat(tokM[h].value[1]) : null;
+    const its = inTokM[h] ? parseFloat(inTokM[h].value[1]) : null;
+    const rr = reqM[h] ? parseFloat(reqM[h].value[1]) : null;
+    const tt = ttftM[h] ? parseFloat(ttftM[h].value[1]) : null;
+    const memStr = mu != null ? (mt != null ? `${fmt(mu/1024,1)}/${fmt(mt/1024,0)}G` : `${fmt(mu/1024,1)}G`) : "—";
+    return `<tr>
+      <td class="idx">${esc(h)}</td>
+      <td class="num">${gc != null ? fmt(gc,0) : "—"}</td>
+      <td class="num">${u != null ? fmt(u,0)+"%" : "—"}</td>
+      <td class="num">${memStr}</td>
+      <td class="num">${ts != null ? fmt(ts,1) : "—"}</td>
+      <td class="num">${its != null ? fmt(its,1) : "—"}</td>
+      <td class="num">${rr != null ? fmt(rr,0) : "—"}</td>
+      <td class="num">${tt != null ? fmt(tt,3)+"s" : "—"}</td>
+    </tr>`;
+  }).join("");
+}
+
 /* -- host cards -- */
 function renderHostCards(data) {
   const host = document.getElementById("host-cards");
@@ -129,7 +334,7 @@ function renderHostCards(data) {
   const netTx = firstValue(data, "net_tx");
   const uptime = firstValue(data, "uptime");
 
-  if (cpuPct == null) { host.innerHTML = '<div class="empty-note">No data yet\u2026</div>'; return; }
+  if (cpuPct == null) { host.innerHTML = '<div class="empty-note">No data yet…</div>'; return; }
 
   const memPct = memTotal ? Math.round((memUsed / memTotal) * 100) : 0;
   const diskPct = diskTotal ? Math.round((diskUsed / diskTotal) * 100) : 0;
@@ -151,7 +356,7 @@ function renderHostCards(data) {
     </div>
     <div class="stat">
       <div class="k">Network</div>
-      <div class="v">${fmt(netRx/1e6,1)} <small>\u2193 / ${fmt(netTx/1e6,1)} \u2191 MB/s</small></div>
+      <div class="v">${fmt(netRx/1e6,1)} <small>↓ / ${fmt(netTx/1e6,1)} ↑ MB/s</small></div>
     </div>
     <div class="stat">
       <div class="k">Uptime</div>
@@ -173,7 +378,7 @@ function renderGpuTable(data) {
   const smClock = vectorResults(data, "gpu_sm_clock");
   const memClock = vectorResults(data, "gpu_mem_clock");
 
-  document.getElementById("gpu-count").textContent = util.length ? `${util.length} GPU${util.length!==1?'s':''}` : "\u2014";
+  document.getElementById("gpu-count").textContent = util.length ? `${util.length} GPU${util.length!==1?'s':''}` : "—";
   if (!util.length) { body.innerHTML = ""; empty.style.display = "block"; return; }
   empty.style.display = "none";
 
@@ -197,8 +402,8 @@ function renderGpuTable(data) {
     const u = utilM[g] ? parseFloat(utilM[g].value[1]) : 0;
     const barCls = u > 80 ? (u > 95 ? "crit" : "hot") : "";
     const metric = utilM[g]?.metric || {};
-    const model = metric.model || "\u2014";
-    const uuid = metric.uuid || "\u2014";
+    const model = metric.model || "—";
+    const uuid = metric.uuid || "—";
     const mu = memUtilM[g] ? parseFloat(memUtilM[g].value[1]) : null;
     const muUsed = memUsedM[g] ? parseFloat(memUsedM[g].value[1]) : null;
     const muTotal = memTotalM[g] ? parseFloat(memTotalM[g].value[1]) : null;
@@ -207,33 +412,41 @@ function renderGpuTable(data) {
     const f = fanM[g] ? parseFloat(fanM[g].value[1]) : null;
     const sc = smClockM[g] ? parseFloat(smClockM[g].value[1]) : null;
     const mc = memClockM[g] ? parseFloat(memClockM[g].value[1]) : null;
-    const memUsedStr = muUsed != null ? (muTotal != null ? `${fmt(muUsed/1024,1)}/${fmt(muTotal/1024,0)}G` : `${fmt(muUsed/1024,1)}G`) : "\u2014";
+    const memUsedStr = muUsed != null ? (muTotal != null ? `${fmt(muUsed/1024,1)}/${fmt(muTotal/1024,0)}G` : `${fmt(muUsed/1024,1)}G`) : "—";
     return `<tr>
       <td class="idx">${g}</td>
       <td>${esc(model)}</td>
-      <td style="font-size:10px;color:var(--txt-3)">${esc(uuid.slice(0,20))}\u2026</td>
+      <td style="font-size:10px;color:var(--txt-3)">${esc(uuid.slice(0,20))}…</td>
       <td class="num"><span class="bar ${barCls}"><i style="width:${u}%"></i></span>${fmt(u,0)}%</td>
-      <td class="num">${mu != null ? fmt(mu,0)+"%" : "\u2014"}</td>
+      <td class="num">${mu != null ? fmt(mu,0)+"%" : "—"}</td>
       <td class="num">${memUsedStr}</td>
-      <td class="num">${t != null ? fmt(t,0)+"\u00b0" : "\u2014"}</td>
-      <td class="num">${p != null ? fmt(p,0) : "\u2014"}</td>
-      <td class="num">${f != null ? fmt(f,0)+"%" : "\u2014"}</td>
-      <td class="num">${sc != null ? fmt(sc,0)+" MHz" : "\u2014"}</td>
-      <td class="num">${mc != null ? fmt(mc,0)+" MHz" : "\u2014"}</td>
+      <td class="num">${t != null ? fmt(t,0)+"°" : "—"}</td>
+      <td class="num">${p != null ? fmt(p,0) : "—"}</td>
+      <td class="num">${f != null ? fmt(f,0)+"%" : "—"}</td>
+      <td class="num">${sc != null ? fmt(sc,0)+" MHz" : "—"}</td>
+      <td class="num">${mc != null ? fmt(mc,0)+" MHz" : "—"}</td>
     </tr>`;
   }).join("");
 }
 
 /* -- charts (Chart.js) -- */
 const CHART_DEFS = [
+  // Host charts
   { id: "chart-cpu", qid: "chart-cpu", nowId: "now-cpu", label: "CPU %", unit: "%" },
   { id: "chart-mem", qid: "chart-mem", nowId: "now-mem", label: "Mem MB", unit: " MB" },
   { id: "chart-gpu", qid: "chart-gpu", nowId: "now-gpu", label: "GPU %", unit: "%" },
-  { id: "chart-temp", qid: "chart-temp", nowId: "now-temp", label: "\u00b0C", unit: "\u00b0" },
+  { id: "chart-temp", qid: "chart-temp", nowId: "now-temp", label: "°C", unit: "°" },
   { id: "chart-gpu-mem", qid: "chart-gpu-mem", nowId: "now-gpu-mem", label: "GPU Mem GB", unit: " GB", div: 1024 },
   { id: "chart-gpu-power", qid: "chart-gpu-power", nowId: "now-gpu-power", label: "Power W", unit: " W" },
   { id: "chart-sm-clock", qid: "chart-sm-clock", nowId: "now-sm-clock", label: "SM MHz", unit: " MHz" },
   { id: "chart-mem-clock", qid: "chart-mem-clock", nowId: "now-mem-clock", label: "Mem MHz", unit: " MHz" },
+  // Cluster charts
+  { id: "chart-cgpu", qid: "chart-cgpu", nowId: "now-cgpu", label: "GPU %", unit: "%" },
+  { id: "chart-cgpu-mem", qid: "chart-cgpu-mem", nowId: "now-cgpu-mem", label: "GPU Mem GB", unit: " GB", div: 1024 },
+  { id: "chart-tok", qid: "chart-tok", nowId: "now-tok", label: "tok/s", unit: "" },
+  { id: "chart-in-tok", qid: "chart-in-tok", nowId: "now-in-tok", label: "tok/s", unit: "" },
+  { id: "chart-ttft", qid: "chart-ttft", nowId: "now-ttft", label: "s", unit: "s" },
+  { id: "chart-itl", qid: "chart-itl", nowId: "now-itl", label: "s", unit: "s" },
 ];
 
 function createOrUpdateChart(def, resp, now) {
@@ -378,9 +591,9 @@ function setStatus(s) {
   el.innerHTML = `<span class="pulse"></span>${s}`;
 }
 
-function fmt(v, d) { return (v == null || Number.isNaN(v)) ? "\u2014" : Number(v).toFixed(d); }
+function fmt(v, d) { return (v == null || Number.isNaN(v)) ? "—" : Number(v).toFixed(d); }
 function fmtUptime(s) {
-  if (!s) return "\u2014";
+  if (!s) return "—";
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   return `${d}d ${h}h ${m}m`;
 }

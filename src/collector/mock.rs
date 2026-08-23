@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use super::{Collector, CpuCoreSample, GpuSample, HostSample, NetSample, Snapshot};
+use super::{Collector, CpuCoreSample, GpuSample, HostSample, InferenceSample, NetSample, Snapshot};
 
 pub struct MockCollector;
 
@@ -91,6 +91,84 @@ impl Collector for MockCollector {
             },
         ];
 
+        // Mock inference metrics (simulate sglang/vLLM server).
+        let inference = vec![
+            InferenceSample {
+                engine: "vllm".into(),
+                model_name: "llama-3.1-8b-instruct".into(),
+                metrics: vec![
+                    ("vllm:num_requests_running".into(), 3.0),
+                    ("vllm:num_requests_waiting".into(), 2.0),
+                    ("vllm:kv_cache_usage_perc".into(), 0.45),
+                    ("vllm:generation_tokens_total".into(), 1_250_000.0),
+                    ("vllm:prompt_tokens_total".into(), 860_000.0),
+                    ("vllm:prompt_tokens_cached_total".into(), 320_000.0),
+                    ("vllm:time_to_first_token_seconds_sum".into(), 450.0),
+                    ("vllm:time_to_first_token_seconds_count".into(), 500.0),
+                    ("vllm:time_to_first_token_seconds_bucket{le=\"0.01\"}".into(), 0.0),
+                    ("vllm:time_to_first_token_seconds_bucket{le=\"0.05\"}".into(), 10.0),
+                    ("vllm:time_to_first_token_seconds_bucket{le=\"0.1\"}".into(), 80.0),
+                    ("vllm:time_to_first_token_seconds_bucket{le=\"0.25\"}".into(), 220.0),
+                    ("vllm:time_to_first_token_seconds_bucket{le=\"0.5\"}".into(), 380.0),
+                    ("vllm:time_to_first_token_seconds_bucket{le=\"1.0\"}".into(), 470.0),
+                    ("vllm:time_to_first_token_seconds_bucket{le=\"+Inf\"}".into(), 500.0),
+                    ("vllm:inter_token_latency_seconds_sum".into(), 1200.0),
+                    ("vllm:inter_token_latency_seconds_count".into(), 8000.0),
+                    ("vllm:inter_token_latency_seconds_bucket{le=\"0.01\"}".into(), 100.0),
+                    ("vllm:inter_token_latency_seconds_bucket{le=\"0.05\"}".into(), 1500.0),
+                    ("vllm:inter_token_latency_seconds_bucket{le=\"0.1\"}".into(), 4000.0),
+                    ("vllm:inter_token_latency_seconds_bucket{le=\"0.25\"}".into(), 6500.0),
+                    ("vllm:inter_token_latency_seconds_bucket{le=\"0.5\"}".into(), 7600.0),
+                    ("vllm:inter_token_latency_seconds_bucket{le=\"1.0\"}".into(), 7950.0),
+                    ("vllm:inter_token_latency_seconds_bucket{le=\"+Inf\"}".into(), 8000.0),
+                    ("vllm:request_success_total".into(), 500.0),
+                    ("vllm:num_preemptions_total".into(), 5.0),
+                    ("vllm:prefix_cache_hits_total".into(), 320_000.0),
+                    ("vllm:prefix_cache_queries_total".into(), 860_000.0),
+                    ("vllm:process_cpu_seconds_total".into(), 7200.0),
+                    ("vllm:process_resident_memory_bytes".into(), 14_000_000_000.0),
+                    ("vllm:process_virtual_memory_bytes".into(), 20_000_000_000.0),
+                ],
+            },
+            InferenceSample {
+                engine: "sglang".into(),
+                model_name: "qwen2.5-32b".into(),
+                metrics: vec![
+                    ("sglang:num_requests_running".into(), 2.0),
+                    ("sglang:num_requests_waiting".into(), 1.0),
+                    ("sglang:kv_cache_usage_perc".into(), 0.62),
+                    ("sglang:generation_tokens_total".into(), 980_000.0),
+                    ("sglang:prompt_tokens_total".into(), 640_000.0),
+                    ("sglang:prompt_tokens_cached_total".into(), 210_000.0),
+                    ("sglang:time_to_first_token_seconds_sum".into(), 320.0),
+                    ("sglang:time_to_first_token_seconds_count".into(), 400.0),
+                    ("sglang:time_to_first_token_seconds_bucket{le=\"0.01\"}".into(), 0.0),
+                    ("sglang:time_to_first_token_seconds_bucket{le=\"0.05\"}".into(), 5.0),
+                    ("sglang:time_to_first_token_seconds_bucket{le=\"0.1\"}".into(), 60.0),
+                    ("sglang:time_to_first_token_seconds_bucket{le=\"0.25\"}".into(), 180.0),
+                    ("sglang:time_to_first_token_seconds_bucket{le=\"0.5\"}".into(), 300.0),
+                    ("sglang:time_to_first_token_seconds_bucket{le=\"1.0\"}".into(), 380.0),
+                    ("sglang:time_to_first_token_seconds_bucket{le=\"+Inf\"}".into(), 400.0),
+                    ("sglang:inter_token_latency_seconds_sum".into(), 900.0),
+                    ("sglang:inter_token_latency_seconds_count".into(), 6000.0),
+                    ("sglang:inter_token_latency_seconds_bucket{le=\"0.01\"}".into(), 50.0),
+                    ("sglang:inter_token_latency_seconds_bucket{le=\"0.05\"}".into(), 800.0),
+                    ("sglang:inter_token_latency_seconds_bucket{le=\"0.1\"}".into(), 2500.0),
+                    ("sglang:inter_token_latency_seconds_bucket{le=\"0.25\"}".into(), 4800.0),
+                    ("sglang:inter_token_latency_seconds_bucket{le=\"0.5\"}".into(), 5700.0),
+                    ("sglang:inter_token_latency_seconds_bucket{le=\"1.0\"}".into(), 5950.0),
+                    ("sglang:inter_token_latency_seconds_bucket{le=\"+Inf\"}".into(), 6000.0),
+                    ("sglang:request_success_total".into(), 400.0),
+                    ("sglang:num_preemptions_total".into(), 3.0),
+                    ("sglang:prefix_cache_hits_total".into(), 210_000.0),
+                    ("sglang:prefix_cache_queries_total".into(), 640_000.0),
+                    ("sglang:process_cpu_seconds_total".into(), 5400.0),
+                    ("sglang:process_resident_memory_bytes".into(), 28_000_000_000.0),
+                    ("sglang:process_virtual_memory_bytes".into(), 35_000_000_000.0),
+                ],
+            },
+        ];
+
         Ok(Snapshot {
             timestamp: chrono::Utc::now(),
             host: HostSample {
@@ -107,7 +185,7 @@ impl Collector for MockCollector {
                 networks,
             },
             gpus,
-            inference: Vec::new(),
+            inference,
             extra: HashMap::new(),
         })
     }
