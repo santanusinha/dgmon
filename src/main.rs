@@ -50,8 +50,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Aggregation server: receive pushes from collector agents.
-    /// Expose `/metrics`, `/snapshot`, `/nodes`, `/health`.
+    /// Expose `/metrics`, `/nodes`, `/health`.
     Server {
         /// Listen address.
         #[arg(long, env = "DGMON_LISTEN", default_value = "0.0.0.0:9401")]

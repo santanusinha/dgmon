@@ -34,14 +34,6 @@ async fn nodes(state: web::Data<ServerState>) -> impl Responder {
         .body(serde_json::to_string_pretty(&nodes).unwrap_or_default())
 }
 
-/// GET /snapshot — all snapshots as a JSON array.
-async fn json(state: web::Data<ServerState>) -> impl Responder {
-    let snaps = state.store.all();
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(serde_json::to_string_pretty(&snaps).unwrap_or_default())
-}
-
 /// GET /metrics — Prometheus text format for all nodes.
 async fn metrics(state: web::Data<ServerState>) -> impl Responder {
     let snaps = state.store.all();
@@ -131,12 +123,9 @@ pub fn run(addr: &str, data_dir: Option<String>) -> anyhow::Result<()> {
                 .route("/static/chart.umd.min.js", web::get().to(http::chart_js))
                 .route("/health", web::get().to(http::health))
                 .route("/nodes", web::get().to(nodes))
-                .route("/snapshot", web::get().to(json))
                 .route("/metrics", web::get().to(metrics))
                 .route("/ingest", web::post().to(ingest))
                 .route("/history", web::get().to(http::history))
-                .route("/metrics/list", web::get().to(http::metrics_list))
-                .route("/query", web::get().to(http::query))
                 .default_service(web::route().to(not_found))
         })
         .bind(&addr_owned)

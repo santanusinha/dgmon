@@ -26,18 +26,6 @@ struct ServiceState {
     http: AppState,
 }
 
-/// GET /snapshot — all snapshots as a JSON array.
-async fn json(state: web::Data<ServiceState>) -> impl Responder {
-    let snaps = state.store.all();
-    match serde_json::to_string_pretty(&snaps) {
-        Ok(json) => HttpResponse::Ok()
-            .content_type("application/json")
-            .body(json),
-        Err(e) => HttpResponse::InternalServerError()
-            .content_type("application/json")
-            .body(format!("{{\"error\":\"{e}\"}}")),
-    }
-}
 
 /// GET /nodes — list of registered nodes.
 async fn nodes(state: web::Data<ServiceState>) -> impl Responder {
@@ -172,12 +160,9 @@ pub fn run(
                 .route("/static/chart.umd.min.js", web::get().to(http::chart_js))
                 .route("/health", web::get().to(http::health))
                 .route("/nodes", web::get().to(nodes))
-                .route("/snapshot", web::get().to(json))
                 .route("/metrics", web::get().to(metrics))
                 .route("/ingest", web::post().to(ingest))
                 .route("/history", web::get().to(http::history))
-                .route("/metrics/list", web::get().to(http::metrics_list))
-                .route("/query", web::get().to(http::query))
                 .default_service(web::route().to(not_found))
         })
         .bind(&addr_owned)

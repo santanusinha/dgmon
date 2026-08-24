@@ -23,7 +23,6 @@ dgmon uses a **push** architecture for cluster deployments:
                     │  server      │
                     │              │
                     │ /metrics     │ ← Prometheus scrapes here
-                    │ /snapshot   │
                     │ /nodes       │
                     │ /health      │
                     └──────────────┘
@@ -40,7 +39,7 @@ For single-node use, `dgmon service` collects locally and serves directly.
 
 | Command | Purpose |
 |---|---|
-| `dgmon server` | Aggregation server. Receives pushes, exposes `/metrics`, `/snapshot`, `/nodes`, `/health`. |
+| `dgmon server` | Aggregation server. Receives pushes, exposes `/metrics`, `/nodes`, `/health`. |
 | `dgmon push --config <file>` | Collector agent. Collects locally, pushes to a remote server. |
 | `dgmon service` | Standalone single-node mode. Collects locally, serves HTTP directly. |
 | `dgmon once` | Collect once, print to stdout. |
@@ -56,7 +55,7 @@ flag or an environment variable.
 | `--mock` | `DGMON_MOCK` | off | all | Use the mock collector instead of `nvidia-smi`. Useful for testing without a GPU. |
 | `--interval <secs>` | `DGMON_INTERVAL` | `5` | `push`, `service`, `loop` | How often to collect a snapshot, in seconds. |
 | `--listen <addr>` | `DGMON_LISTEN` | `0.0.0.0:9401` | `server`, `service` | Address and port to bind the HTTP server to. |
-| `--data-dir <path>` | `DGMON_DATA_DIR` | (none) | `server`, `service` | Enable time-series storage at this path. Adds `/history`, `/query`, and `/metrics/list`. |
+| `--data-dir <path>` | `DGMON_DATA_DIR` | (none) | `server`, `service` | Enable time-series storage at this path. Adds `/history`. |
 | `--config <file>` | `DGMON_CONFIG` | (none) | `push`, `service` | Path to the JSON config file (inference servers, interface roles). |
 
 ### Examples
@@ -111,7 +110,6 @@ See `examples/dgmon-push.json` for a complete example.
 |---|---|---|
 | `POST` | `/ingest` | Receive a snapshot push from a collector agent. |
 | `GET` | `/metrics` | All nodes in Prometheus exposition format. |
-| `GET` | `/snapshot` | All nodes as a JSON array of snapshots. |
 | `GET` | `/nodes` | List of node hostnames, GPU counts, and last-seen timestamps. |
 | `GET` | `/health` | Returns `ok` (for liveness probes). |
 
@@ -419,7 +417,7 @@ src/
   push.rs         — Push agent: async collect + POST to server
   server.rs       — Aggregation server: receive pushes, expose /metrics
   service.rs      — Standalone single-node service
-  http.rs         — Shared actix-web handlers (dashboard, static, health, history, query)
+  http.rs         — Shared actix-web handlers (dashboard, static, health, history)
   storage.rs      — TsinkStore wrapper (time-series storage)
   store.rs        — Shared multi-node in-memory store (NodeStore, NodeInfo)
   metric_name.rs  — Shared metric-name helpers (sanitize_metric_name, strip_engine_prefix)

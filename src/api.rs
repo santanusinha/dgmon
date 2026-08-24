@@ -3,8 +3,7 @@
 //!
 //! Provides clean, resource-oriented endpoints for querying cluster data
 //! from any client (browser, script, mobile app). The existing endpoints
-//! (`/snapshot`, `/nodes`, `/metrics`, `/query`) remain for backward
-//! compatibility.
+//! (`/nodes`, `/metrics`) remain for backward compatibility.
 //!
 //! Routes:
 //!   GET /api/v1/nodes                          → list nodes

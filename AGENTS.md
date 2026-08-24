@@ -18,11 +18,11 @@ Push-based cluster monitoring:
 - `src/collector/mock.rs` — MockCollector (fake data for testing)
 - `src/inference.rs` — Inference discovery + scraping (sglang/vLLM)
 - `src/push.rs` — Push agent: async collect loop + HTTP POST to server
-- `src/server.rs` — Aggregation server: /ingest, /metrics, /snapshot, /nodes, /history, /query, /metrics/list, /health
-- `src/service.rs` — Standalone single-node service: /snapshot, /nodes, /metrics, /history, /query, /metrics/list, /health
+- `src/server.rs` — Aggregation server: /ingest, /metrics, /nodes, /history, /health
+- `src/service.rs` — Standalone single-node service: /nodes, /metrics, /history, /health
 - `src/api.rs` — Versioned REST API under /api/v1/ (nodes, gpus, metrics)
 - `src/promapi.rs` — Prometheus-compatible API under /api/v1/ (query, query_range, query_batch, labels, label values, buildinfo)
-- `src/http.rs` — Shared actix-web handlers (dashboard, static, health, history, query, metrics/list)
+- `src/http.rs` — Shared actix-web handlers (dashboard, static, health, history)
 - `src/storage.rs` — TsinkStore wrapper (time-series storage)
 - `src/store.rs` — Shared multi-node in-memory store (NodeStore, NodeInfo)
 - `src/metric_name.rs` — Shared metric-name helpers (sanitize_metric_name, strip_engine_prefix)
@@ -39,12 +39,9 @@ Push-based cluster monitoring:
 # HTTP API routes
 - `GET /` — HTML dashboard with endpoint links
 - `GET /health` — returns `ok` (liveness probe)
-- `GET /query?q=<promql>&time=<ms>` — PromQL instant query (requires `--data-dir`)
-- `GET /query?q=<promql>&start=<ms>&end=<ms>&step=<ms>` — PromQL range query (requires `--data-dir`)
 - `GET /metrics` — Prometheus text format output
 - `POST /ingest` — accepts a JSON snapshot from a push agent (server mode only)
 - `GET /history?metric=<name>&hostname=<host>&start=<ms>&end=<ms>` — JSON time-series query (requires `--data-dir`)
-- `GET /metrics/list` — JSON array of stored metric names (requires `--data-dir`)
 
 # REST API routes (/api/v1/)
 - `GET /api/v1/nodes` — list nodes
@@ -103,7 +100,4 @@ Push-based cluster monitoring:
 - Curl `http://localhost:9402/nodes` to see registered nodes
 - Curl `http://localhost:9402/metrics` for Prometheus output
 - Curl `http://localhost:9402/history?metric=dgmon_cpu_usage_pct&hostname=host1&start=0&end=$(date +%s)000` for historical data
-- Curl `http://localhost:9402/metrics/list` for all stored metric names
-- Curl `http://localhost:9402/query?q=dgmon_cpu_usage_pct&time=$(date +%s)000` for a PromQL instant query
-- Curl `http://localhost:9402/query?q=avg(dgmon_cpu_usage_pct)&start=$(($(date +%s)-3600))000&end=$(date +%s)000&step=30000` for a PromQL range query
 - Curl `http://localhost:9402/metrics` for Prometheus output
