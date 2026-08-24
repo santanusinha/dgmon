@@ -1,0 +1,300 @@
+{
+  "dashboard": {
+    "uid": "dgmon-cluster",
+    "title": "dgmon Cluster",
+    "tags": ["dgmon"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "15s",
+    "time": { "from": "now-1h", "to": "now" },
+    "templating": {
+      "list": [
+        {
+          "name": "hostname",
+          "type": "query",
+          "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+          "query": "label_values(dgmon_cpu_usage_pct, hostname)",
+          "refresh": 1,
+          "includeAll": true,
+          "allValue": ".*",
+          "multi": true,
+          "current": { "text": "All", "value": "$__all" }
+        },
+        {
+          "name": "gpu",
+          "type": "query",
+          "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+          "query": "label_values(dgmon_gpu_utilization, gpu)",
+          "refresh": 1,
+          "includeAll": true,
+          "allValue": ".*",
+          "multi": true,
+          "current": { "text": "All", "value": "$__all" }
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "GPU Utilization",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "dgmon_gpu_utilization{hostname=~\"$hostname\", gpu=~\"$gpu\"}",
+            "legendFormat": "{{hostname}} GPU {{gpu}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "GPU Temperature",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "celsius",
+            "min": 0,
+            "max": 100,
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "dgmon_gpu_temp_c{hostname=~\"$hostname\", gpu=~\"$gpu\"}",
+            "legendFormat": "{{hostname}} GPU {{gpu}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "GPU Power",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "watt",
+            "min": 0,
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "dgmon_gpu_power_w{hostname=~\"$hostname\", gpu=~\"$gpu\"}",
+            "legendFormat": "{{hostname}} GPU {{gpu}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "GPU Memory Utilization",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "dgmon_gpu_mem_utilization{hostname=~\"$hostname\", gpu=~\"$gpu\"}",
+            "legendFormat": "{{hostname}} GPU {{gpu}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "CPU Usage",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "dgmon_cpu_usage_pct{hostname=~\"$hostname\"}",
+            "legendFormat": "{{hostname}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Memory Usage",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "decmbytes",
+            "min": 0,
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "dgmon_memory_used_mb{hostname=~\"$hostname\"}",
+            "legendFormat": "{{hostname}} used",
+            "refId": "A"
+          },
+          {
+            "expr": "dgmon_memory_total_mb{hostname=~\"$hostname\"}",
+            "legendFormat": "{{hostname}} total",
+            "refId": "B"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Network RX",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps",
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "rate(dgmon_net_rx_bytes{hostname=~\"$hostname\", interface=~\"en.*|wl.*\"}[1m])",
+            "legendFormat": "{{hostname}} {{interface}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Network TX",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps",
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "rate(dgmon_net_tx_bytes{hostname=~\"$hostname\", interface=~\"en.*|wl.*\"}[1m])",
+            "legendFormat": "{{hostname}} {{interface}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Inference Requests Running",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "dgmon_inference_num_requests_running{hostname=~\"$hostname\"}",
+            "legendFormat": "{{hostname}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "KV Cache Usage",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "dgmon_inference_kv_cache_usage_perc{hostname=~\"$hostname\"}",
+            "legendFormat": "{{hostname}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Generation Tokens",
+        "type": "timeseries",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "rate(dgmon_inference_generation_tokens_total{hostname=~\"$hostname\"}[1m])",
+            "legendFormat": "{{hostname}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Uptime",
+        "type": "stat",
+        "datasource": { "type": "prometheus", "uid": "dfw5xvz1i55a8e" },
+        "gridPos": { "h": 4, "w": 24, "x": 0, "y": 48 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "color": { "mode": "continuous-GrYlRd" }
+          }
+        },
+        "targets": [
+          {
+            "expr": "dgmon_uptime_seconds{hostname=~\"$hostname\"}",
+            "legendFormat": "{{hostname}}",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  },
+  "overwrite": true
+}
