@@ -4,18 +4,19 @@ A lightweight system monitor for NVIDIA DGX Spark GPU clusters.
 
 ## Install
 
-The quickest way to install dgmon is with the installer script. It sets
-up dgmon as a systemd service and asks for the mode:
+The quickest way to install dgmon is with the installer script. It detects
+the local architecture, downloads the matching release binary from GitHub,
+and sets up dgmon as a systemd service. It asks for the mode:
 
 - `server` — the central aggregation server
 - `push` — a collector agent on a GPU node
 
 ```sh
 # On the central node:
-sudo ./deploy/install.sh   # choose server
+curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
 
 # On each GPU node:
-sudo ./deploy/install.sh   # choose push, enter the server node IP
+curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
 ```
 
 The installer copies the binary to `/usr/local/bin/dgmon`, writes the push
@@ -42,7 +43,7 @@ cargo install dgmon
 This installs the `dgmon` binary to `~/.cargo/bin/dgmon`. Add that
 directory to your `PATH` if it is not already there.
 
-### Build from source
+### Install from source
 
 ```sh
 git clone https://github.com/santanusinha/dgmon

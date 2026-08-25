@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# dgmon systemd installer.
+# dgmon installer.
 #
 # This script installs dgmon as a systemd service. It asks for the mode:
 #   server - the central aggregation server
@@ -18,27 +18,56 @@
 #
 # Usage:
 #   sudo ./deploy/install.sh
-#   sudo BIN_SRC= ./deploy/install.sh   # install from crates.io
+#   curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
 #
 set -euo pipefail
 
-BIN_SRC="${BIN_SRC:-target/release/dgmon}"
+REPO="santanusinha/dgmon"
 BIN_DST="/usr/local/bin/dgmon"
 CONFIG_DIR="/etc/dgmon"
 CONFIG_FILE="${CONFIG_DIR}/dgmon.json"
 DATA_DIR="/var/lib/dgmon"
 UNIT_DIR="/etc/systemd/system"
+VERSION="${VERSION:-latest}"
 
 if [[ "${EUID}" -ne 0 ]]; then
     echo "error: run this script as root (sudo)." >&2
     exit 1
 fi
 
-# If BIN_SRC is not a local file, install from crates.io.
-if [[ ! -f "${BIN_SRC}" ]]; then
-    echo "==> installing dgmon from crates.io"
-    cargo install dgmon
-    BIN_SRC="$(command -v dgmon || echo ~/.cargo/bin/dgmon)"
+# Detect the architecture and map it to a release asset name.
+detect_asset() {
+    local arch
+    arch="$(uname -m)"
+    case "${arch}" in
+        x86_64|amd64)  echo "dgmon-x86_64-unknown-linux-gnu" ;;
+        aarch64|arm64) echo "dgmon-aarch64-unknown-linux-gnu" ;;
+        *) echo "error: unsupported architecture ${arch}." >&2; exit 1 ;;
+    esac
+}
+
+# Download the release binary and verify its sha256 checksum.
+download_release() {
+    local asset="$1"
+    local base="https://github.com/${REPO}/releases/${VERSION}/download"
+    local tmp
+    tmp="$(mktemp -d)"
+    echo "==> downloading ${asset}"
+    curl -fsSL -o "${tmp}/dgmon" "${base}/${asset}"
+    curl -fsSL -o "${tmp}/dgmon.sha256" "${base}/${asset}.sha256"
+    (cd "${tmp}" && sha256sum -c dgmon.sha256)
+    BIN_SRC="${tmp}/dgmon"
+}
+
+# Resolve the binary source. Prefer a local build, then a release binary,
+# then crates.io.
+BIN_SRC="${BIN_SRC:-}"
+if [[ -z "${BIN_SRC}" ]]; then
+    if [[ -f "target/release/dgmon" ]]; then
+        BIN_SRC="target/release/dgmon"
+    else
+        download_release "$(detect_asset)"
+    fi
 fi
 
 if [[ ! -f "${BIN_SRC}" ]]; then
@@ -48,7 +77,7 @@ if [[ ! -f "${BIN_SRC}" ]]; then
     exit 1
 fi
 
-echo "==> dgmon systemd installer"
+echo "==> dgmon installer"
 echo ""
 
 # Ask for the mode.
@@ -102,11 +131,53 @@ fi
 
 echo "==> installing systemd unit"
 if [[ "${MODE}" == "server" ]]; then
-    install -D -m 0644 deploy/systemd/dgmon-server.service "${UNIT_DIR}/dgmon-server.service"
+    cat > "${UNIT_DIR}/dgmon-server.service" <<'EOF'
+[Unit]
+Description=dgmon aggregation server
+Documentation=https://github.com/santanusinha/dgmon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/dgmon server --listen 0.0.0.0:9401 --data-dir /var/lib/dgmon
+Environment=DGMON_DATA_DIR=/var/lib/dgmon
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dgmon
+StateDirectory=dgmon
+
+[Install]
+WantedBy=multi-user.target
+EOF
     UNIT="dgmon-server"
 else
-    install -D -m 0644 deploy/systemd/dgmon-push.service "${UNIT_DIR}/dgmon-push.service"
-    UNIT="dgmon-push"
+    cat > "${UNIT_DIR}/dgmon-push.service" <<'EOF'
+[Unit]
+Description=dgmon push agent
+Documentation=https://github.com/santanusinha/dgmon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/dgmon push --config /etc/dgmon/dgmon.json
+Environment=DGMON_CONFIG=/etc/dgmon/dgmon.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/dgmon
+
+[Install]
+WantedBy=multi-user.target
+EOF
 fi
 echo "    ${UNIT_DIR}/${UNIT}.service"
 
