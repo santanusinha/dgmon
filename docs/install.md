@@ -4,37 +4,108 @@ icon: lucide/download
 
 # Install
 
-## Installer script
+dgmon supports several deployment strategies. Choose the one that fits your
+setup. Most people have one or two DGX nodes, so start there.
 
-The quickest way to install dgmon is with the installer script. It detects
-the local architecture, downloads the matching release binary from GitHub,
-and sets up dgmon as a systemd service. It asks for the mode:
+## Single node
 
-- `server` — the central aggregation server
-- `push` — a collector agent on a GPU node
+For one DGX node, run the standalone service. It collects locally and serves
+the dashboard and API on the same machine.
 
 ```sh
-# On the central node:
-curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
+dgmon service --listen 0.0.0.0:9401
+```
 
-# On each GPU node:
+Open the dashboard at `http://<node-ip>:9401/`.
+
+To run it as a systemd service, use the installer script and choose
+`server` mode:
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
 ```
 
-The installer copies the binary to `/usr/local/bin/dgmon`, writes the push
-config to `/etc/dgmon/dgmon.json` (push mode), installs the systemd unit,
-and enables it. Logs go to journald:
+The installer detects the local architecture, downloads the matching release
+binary from GitHub, and sets up the service. Logs go to journald:
+
+```sh
+journalctl -u dgmon-server -f
+```
+
+## Two nodes
+
+For two DGX nodes, run the server on one node and the push agent on the
+other. The server node collects nothing itself; it only aggregates.
+
+On the **server node**:
+
+```sh
+dgmon server --listen 0.0.0.0:9401
+```
+
+On the **other node**, create a push config and run the push agent:
+
+```sh
+dgmon push --config /etc/dgmon/dgmon.json
+```
+
+The push config points at the server node:
+
+```json
+{
+  "server_url": "http://<server-node-ip>:9401/ingest",
+  "interval_secs": 5,
+  "mock": false,
+  "labels": {
+    "cluster": "dgx-spark-prod",
+    "rack": "r1"
+  }
+}
+```
+
+See [Usage](usage.md) for the full config reference.
+
+To run both as systemd services, use the installer script on each node and
+choose the matching mode:
+
+```sh
+# On the server node, choose "server":
+curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
+
+# On the other node, choose "push":
+curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
+```
+
+The installer writes the push config to `/etc/dgmon/dgmon.json` (push mode)
+and enables the service. Logs go to journald:
 
 ```sh
 journalctl -u dgmon-server -f
 journalctl -u dgmon-push -f
 ```
 
-To remove the service and its config:
+## Larger cluster
+
+For three or more nodes, use the same push architecture as the two-node
+setup. One central node runs `dgmon server`; every other node runs
+`dgmon push`.
 
 ```sh
-sudo ./deploy/uninstall.sh
+# On the central node:
+dgmon server --listen 0.0.0.0:9401
+
+# On each GPU node:
+dgmon push --config /etc/dgmon/dgmon.json
 ```
+
+Or use the installer script on each node, choosing `server` on the central
+node and `push` on every other node:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
+```
+
+See [Architecture](architecture.md) for how the pieces fit together.
 
 ## Install from crates.io
 
@@ -55,21 +126,12 @@ cargo build --release
 
 The binary is at `target/release/dgmon`.
 
-## Cluster deployment (manual)
+## Remove the service
+
+To remove the service and its config:
 
 ```sh
-# On the central node:
-dgmon server --listen 0.0.0.0:9401
-
-# On each GPU node:
-dgmon push --config /etc/dgmon/dgmon.json
-```
-
-## Single node
-
-```sh
-# Collect and serve directly:
-dgmon service --listen 0.0.0.0:9401
+sudo ./deploy/uninstall.sh
 ```
 
 ## CLI debugging
