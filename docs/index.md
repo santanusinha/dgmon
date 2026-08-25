@@ -22,8 +22,9 @@ curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/in
 
 The installer asks for the mode:
 
-- `server` — the central aggregation server
+- `service` — a collector agent as well as aggregator server on a GPU node
 - `push` — a collector agent on a GPU node
+- `server` — the central aggregation server
 
 For a single node, run the standalone service:
 
@@ -37,8 +38,8 @@ See [Install](install.md) for all install methods and
 ## Features
 
 - Push-based cluster monitoring
-- Prometheus-compatible API for Grafana
 - Built-in HTML dashboard
+- Prometheus-compatible API for Grafana
 - Time-series storage with 30-day retention
 - Inference metrics for vLLM and sglang
 - Collector abstraction for multiple GPU vendors

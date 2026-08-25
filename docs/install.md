@@ -12,12 +12,6 @@ setup. Most people have one or two DGX nodes, so start there.
 For one DGX node, run the standalone service. It collects locally and serves
 the dashboard and API on the same machine.
 
-```sh
-dgmon service --listen 0.0.0.0:9401
-```
-
-Open the dashboard at `http://<node-ip>:9401/`.
-
 To run it as a systemd service, use the installer script and choose
 `server` mode:
 
@@ -32,10 +26,40 @@ binary from GitHub, and sets up the service. Logs go to journald:
 journalctl -u dgmon-server -f
 ```
 
+To avoid the installer, either download the binary from github or run `cargo install dgmon` to install.
+Then use the following command to run it:
+
+```sh
+dgmon service --listen 0.0.0.0:9401
+```
+
+Open the dashboard at `http://<node-ip>:9401/`.
+
 ## Two nodes
 
 For two DGX nodes, run the server on one node and the push agent on the
 other. The server node collects nothing itself; it only aggregates.
+
+To run both as systemd services, use the installer script on each node and
+choose the matching mode:
+
+```sh
+# On the server node, choose "server":
+curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
+
+# On the other node, choose "push":
+curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
+```
+
+The installer writes the push config to `/etc/dgmon/dgmon.json` (push mode)
+and enables the service. Logs go to journald:
+
+```sh
+journalctl -u dgmon-server -f
+journalctl -u dgmon-push -f
+```
+
+To avoid the installer, either download the binary from github or run `cargo install dgmon` to install.
 
 On the **server node**:
 
@@ -65,30 +89,15 @@ The push config points at the server node:
 
 See [Usage](usage.md) for the full config reference.
 
-To run both as systemd services, use the installer script on each node and
-choose the matching mode:
-
-```sh
-# On the server node, choose "server":
-curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
-
-# On the other node, choose "push":
-curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
-```
-
-The installer writes the push config to `/etc/dgmon/dgmon.json` (push mode)
-and enables the service. Logs go to journald:
-
-```sh
-journalctl -u dgmon-server -f
-journalctl -u dgmon-push -f
-```
-
 ## Larger cluster
 
 For three or more nodes, use the same push architecture as the two-node
 setup. One central node runs `dgmon server`; every other node runs
 `dgmon push`.
+
+
+To avoid the installer, either download the binary from github or run `cargo install dgmon` to install.
+Then use the following command to run it:
 
 ```sh
 # On the central node:
@@ -98,7 +107,7 @@ dgmon server --listen 0.0.0.0:9401
 dgmon push --config /etc/dgmon/dgmon.json
 ```
 
-Or use the installer script on each node, choosing `server` on the central
+Use the installer script on each node, choosing `server` on the central
 node and `push` on every other node:
 
 ```sh
@@ -132,6 +141,32 @@ To remove the service and its config:
 
 ```sh
 sudo ./deploy/uninstall.sh
+```
+
+## Update the binary
+
+To update the installed binary to the latest release from GitHub, run the
+updater script:
+
+```sh
+sudo ./deploy/update.sh
+```
+
+Or run it directly from GitHub:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/update.sh | sudo bash
+```
+
+The updater detects the local architecture, downloads the matching release
+binary, verifies its sha256 checksum, and replaces `/usr/local/bin/dgmon`.
+If dgmon runs as a systemd service, the updater restarts it after the
+update.
+
+To pin a specific version instead of `latest`, set the `VERSION` variable:
+
+```sh
+VERSION=v0.1.0 sudo ./deploy/update.sh
 ```
 
 ## CLI debugging
