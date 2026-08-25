@@ -18,6 +18,7 @@
 #
 # Usage:
 #   sudo ./deploy/install.sh
+#   sudo BIN_SRC= ./deploy/install.sh   # install from crates.io
 #
 set -euo pipefail
 
@@ -33,9 +34,17 @@ if [[ "${EUID}" -ne 0 ]]; then
     exit 1
 fi
 
+# If BIN_SRC is not a local file, install from crates.io.
+if [[ ! -f "${BIN_SRC}" ]]; then
+    echo "==> installing dgmon from crates.io"
+    cargo install dgmon
+    BIN_SRC="$(command -v dgmon || echo ~/.cargo/bin/dgmon)"
+fi
+
 if [[ ! -f "${BIN_SRC}" ]]; then
     echo "error: binary not found at ${BIN_SRC}." >&2
     echo "build it first with: cargo build --release" >&2
+    echo "or install it with:  cargo install dgmon" >&2
     exit 1
 fi
 

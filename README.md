@@ -287,41 +287,84 @@ the `Collector` trait. No server or push agent changes are needed.
 
 ## Usage
 
+### Install from crates.io
+
 ```sh
-# Build
+cargo install dgmon
+```
+
+This installs the `dgmon` binary to `~/.cargo/bin/dgmon`. Add that
+directory to your `PATH` if it is not already there.
+
+### Build from source
+
+```sh
+git clone https://github.com/santanusinha/dgmon
+cd dgmon
 cargo build --release
+```
 
-# --- Cluster deployment (systemd) ---
+The binary is at `target/release/dgmon`.
 
+### Cluster deployment (systemd)
+
+The `deploy/` directory has an installer that sets up dgmon as a systemd
+service. It asks for the mode:
+
+- `server` — the central aggregation server
+- `push` — a collector agent on a GPU node
+
+```sh
 # On the central node:
 sudo ./deploy/install.sh   # choose server
 
 # On each GPU node:
 sudo ./deploy/install.sh   # choose push, enter the server node IP
+```
 
-# --- Cluster deployment (manual) ---
+The installer copies the binary to `/usr/local/bin/dgmon`, writes the push
+config to `/etc/dgmon/dgmon.json` (push mode), installs the systemd unit,
+and enables it. Logs go to journald:
 
+```sh
+journalctl -u dgmon-server -f
+journalctl -u dgmon-push -f
+```
+
+To remove the service and its config:
+
+```sh
+sudo ./deploy/uninstall.sh
+```
+
+### Cluster deployment (manual)
+
+```sh
 # On the central node:
-./target/release/dgmon server --listen 0.0.0.0:9401
+dgmon server --listen 0.0.0.0:9401
 
 # On each GPU node:
-./target/release/dgmon push --config /etc/dgmon/dgmon.json
+dgmon push --config /etc/dgmon/dgmon.json
+```
 
-# --- Single node ---
+### Single node
 
+```sh
 # Collect and serve directly:
-./target/release/dgmon service --listen 0.0.0.0:9401
+dgmon service --listen 0.0.0.0:9401
+```
 
-# --- CLI debugging ---
+### CLI debugging
 
+```sh
 # Collect once:
-./target/release/dgmon once
+dgmon once
 
 # Collect on a loop:
-./target/release/dgmon loop
+dgmon loop
 
 # Use mock data (no GPU needed):
-./target/release/dgmon --mock once
+dgmon --mock once
 ```
 
 ## Environment variables
