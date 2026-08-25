@@ -95,6 +95,13 @@ For three or more nodes, use the same push architecture as the two-node
 setup. One central node runs `dgmon server`; every other node runs
 `dgmon push`.
 
+Use the installer script on each node, choosing `server` on the central
+node and `push` on every other node:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
+```
+
 
 To avoid the installer, either download the binary from github or run `cargo install dgmon` to install.
 Then use the following command to run it:
