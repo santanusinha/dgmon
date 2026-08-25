@@ -2,6 +2,10 @@
 name = "dgmon"
 version = "0.1.0"
 edition = "2024"
+description = "A lightweight system monitor for NVIDIA DGX Spark GPU clusters"
+license = "Apache-2.0"
+repository = "https://github.com/santanusinha/dgmon"
+readme = "README.md"
 
 [dependencies]
 actix-web = "4"
