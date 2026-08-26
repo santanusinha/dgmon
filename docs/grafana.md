@@ -41,7 +41,8 @@ curl -u admin:admin -X POST http://localhost:3000/api/datasources \
 Notes:
 
 - `httpMethod` must be `GET`. dgmon implements only `GET /api/v1/query`.
-- The server must run with `--data-dir` so the Prometheus API has data.
+- The server must have a data directory (via `data_dir` in the config or
+  `--data-dir`) so the Prometheus API has data.
 - The datasource health check uses `/api/v1/status/buildinfo`.
 
 ## Import the dashboard

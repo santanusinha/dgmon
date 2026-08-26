@@ -29,8 +29,9 @@ Push-based cluster monitoring:
 - `src/collect.rs` — CLI collector: once / loop
 
 # Time-series storage
-- The server and service require `--data-dir <path>`. Every snapshot is
-  written to a tsink embedded time-series database at that path.
+- The server and service write every snapshot to a tsink embedded
+  time-series database. The data directory comes from the config file
+  (`data_dir`) or the `--data-dir` flag, which overrides the config.
 - The tsink database stores full history with a 30-day retention window.
 - The `DGMON_DATA_DIR` environment variable sets the same option.
 
@@ -93,7 +94,7 @@ Push-based cluster monitoring:
 - tsink (embedded time-series database for historical metric storage)
 
 # Testing the push architecture
-- Start server: `./target/release/dgmon server --listen 127.0.0.1:9402`
+- Start server: `./target/release/dgmon server --listen 127.0.0.1:9402 --data-dir /tmp/dgmon-data`
 - Start push agent: `./target/release/dgmon push --config examples/dgmon-push.json`
 - Curl `http://localhost:9402/nodes` to see registered nodes
 - Curl `http://localhost:9402/metrics` for Prometheus output

@@ -62,7 +62,7 @@ the `Collector` trait. No server or push agent changes are needed.
 
 ## Testing the push architecture
 
-- Start server: `./target/release/dgmon server --listen 127.0.0.1:9402`
+- Start server: `./target/release/dgmon server --listen 127.0.0.1:9402 --data-dir /tmp/dgmon-data`
 - Start push agent: `./target/release/dgmon push --config examples/dgmon-push.json`
 - Curl `http://localhost:9402/nodes` to see registered nodes
 - Curl `http://localhost:9402/metrics` for Prometheus output

@@ -52,33 +52,33 @@ struct Cli {
 enum Command {
     /// Expose `/metrics`, `/nodes`, `/health`.
     Server {
-        /// Listen address.
-        #[arg(long, env = "DGMON_LISTEN", default_value = "0.0.0.0:9401")]
-        listen: String,
+        /// Listen address. Overrides the config file value.
+        #[arg(long, env = "DGMON_LISTEN")]
+        listen: Option<String>,
 
-        /// Data directory for time-series storage.
+        /// Data directory for time-series storage. Overrides the config file value.
         #[arg(long, env = "DGMON_DATA_DIR")]
-        data_dir: String,
+        data_dir: Option<String>,
 
-        /// Path to the JSON config file (inference servers, interface roles).
+        /// Path to the JSON config file. When omitted, --data-dir is required.
         #[arg(long, env = "DGMON_CONFIG")]
-        config: String,
+        config: Option<String>,
     },
 
     /// Standalone service: collect locally and expose HTTP endpoints.
     /// Use this on a single node (no push architecture).
     Service {
-        /// Listen address.
-        #[arg(long, env = "DGMON_LISTEN", default_value = "0.0.0.0:9401")]
-        listen: String,
+        /// Listen address. Overrides the config file value.
+        #[arg(long, env = "DGMON_LISTEN")]
+        listen: Option<String>,
 
-        /// Data directory for time-series storage.
+        /// Data directory for time-series storage. Overrides the config file value.
         #[arg(long, env = "DGMON_DATA_DIR")]
-        data_dir: String,
+        data_dir: Option<String>,
 
-        /// Path to the JSON config file (inference servers, interface roles).
+        /// Path to the JSON config file. When omitted, --data-dir is required.
         #[arg(long, env = "DGMON_CONFIG")]
-        config: String,
+        config: Option<String>,
     },
 
     /// Push agent: collect locally and push snapshots to a remote dgmon server.
@@ -94,6 +94,33 @@ enum Command {
 
     /// Collect on a loop and print to stdout.
     Loop,
+}
+
+/// Load the config file, or use defaults when no path is given.
+fn load_config(path: Option<&str>) -> anyhow::Result<config::CollectorConfig> {
+    match path {
+        Some(p) => config::CollectorConfig::load(std::path::Path::new(p)),
+        None => Ok(config::CollectorConfig::default()),
+    }
+}
+
+/// Resolve the data directory. CLI overrides config; otherwise error.
+fn resolve_data_dir(cli: Option<String>, cfg: Option<&str>) -> anyhow::Result<String> {
+    if let Some(dir) = cli {
+        return Ok(dir);
+    }
+    if let Some(dir) = cfg {
+        return Ok(dir.to_string());
+    }
+    anyhow::bail!(
+        "no data directory given; pass --data-dir <path> or set data_dir in the config file"
+    )
+}
+
+/// Resolve the listen address. CLI overrides config; default otherwise.
+fn resolve_listen(cli: Option<String>, cfg: Option<&str>) -> String {
+    cli.or_else(|| cfg.map(str::to_string))
+        .unwrap_or_else(|| "0.0.0.0:9401".to_string())
 }
 
 fn make_collector(mock: bool) -> Arc<dyn Collector> {
@@ -123,7 +150,9 @@ fn main() -> anyhow::Result<()> {
             data_dir,
             config,
         } => {
-            let cfg = config::CollectorConfig::load(std::path::Path::new(&config))?;
+            let cfg = load_config(config.as_deref())?;
+            let data_dir = resolve_data_dir(data_dir, cfg.data_dir.as_deref())?;
+            let listen = resolve_listen(listen, cfg.listen.as_deref());
             server::run(&listen, &data_dir, cfg)
         }
 
@@ -133,7 +162,9 @@ fn main() -> anyhow::Result<()> {
             config,
         } => {
             let collector = make_collector(cli.mock);
-            let cfg = config::CollectorConfig::load(std::path::Path::new(&config))?;
+            let cfg = load_config(config.as_deref())?;
+            let data_dir = resolve_data_dir(data_dir, cfg.data_dir.as_deref())?;
+            let listen = resolve_listen(listen, cfg.listen.as_deref());
             service::run(
                 collector,
                 &listen,

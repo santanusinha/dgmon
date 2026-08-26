@@ -15,9 +15,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 # Path to the dgmon binary. Adjust for your install location.
-ExecStart=/usr/local/bin/dgmon server --listen 0.0.0.0:9401 --data-dir /var/lib/dgmon
-# Time-series storage directory (required).
-Environment=DGMON_DATA_DIR=/var/lib/dgmon
+ExecStart=/usr/local/bin/dgmon server --config /etc/dgmon/dgmon.json
+Environment=DGMON_CONFIG=/etc/dgmon/dgmon.json
 Restart=on-failure
 RestartSec=5
 # Hardening

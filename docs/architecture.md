@@ -59,7 +59,8 @@ For single-node use, `dgmon service` collects locally and serves directly.
 
 ## Time-series storage
 
-- The server and service require `--data-dir <path>`. Every snapshot is
-  written to a tsink embedded time-series database at that path.
+- The server and service write every snapshot to a tsink embedded
+  time-series database. The data directory comes from the config file
+  (`data_dir`) or the `--data-dir` flag, which overrides the config.
 - The tsink database stores full history with a 30-day retention window.
 - The `DGMON_DATA_DIR` environment variable sets the same option.

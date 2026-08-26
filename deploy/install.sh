@@ -132,7 +132,9 @@ elif [[ "${MODE}" == "server" || "${MODE}" == "service" ]]; then
   "mock": false,
   "labels": {
     "cluster": "dgx-spark-prod"
-  }
+  },
+  "data_dir": "${DATA_DIR}",
+  "listen": "0.0.0.0:9401"
 }
 EOF
     chmod 0644 "${CONFIG_FILE}"
@@ -155,8 +157,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/dgmon server --listen 0.0.0.0:9401 --data-dir /var/lib/dgmon --config /etc/dgmon/dgmon.json
-Environment=DGMON_DATA_DIR=/var/lib/dgmon
+ExecStart=/usr/local/bin/dgmon server --config /etc/dgmon/dgmon.json
 Environment=DGMON_CONFIG=/etc/dgmon/dgmon.json
 Restart=on-failure
 RestartSec=5
@@ -181,8 +182,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/dgmon service --listen 0.0.0.0:9401 --data-dir /var/lib/dgmon --config /etc/dgmon/dgmon.json
-Environment=DGMON_DATA_DIR=/var/lib/dgmon
+ExecStart=/usr/local/bin/dgmon service --config /etc/dgmon/dgmon.json
 Environment=DGMON_CONFIG=/etc/dgmon/dgmon.json
 Restart=on-failure
 RestartSec=5

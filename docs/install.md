@@ -30,7 +30,7 @@ To avoid the installer, either download the binary from github or run `cargo ins
 Then use the following command to run it:
 
 ```sh
-dgmon service --listen 0.0.0.0:9401 --config /etc/dgmon/dgmon.json
+dgmon service --config /etc/dgmon/dgmon.json
 ```
 
 Open the dashboard at `http://<node-ip>:9401/`.
@@ -64,7 +64,7 @@ To avoid the installer, either download the binary from github or run `cargo ins
 On the **server node**:
 
 ```sh
-dgmon server --listen 0.0.0.0:9401 --config /etc/dgmon/dgmon.json
+dgmon server --config /etc/dgmon/dgmon.json
 ```
 
 On the **other node**, create a push config and run the push agent:
@@ -108,7 +108,7 @@ Then use the following command to run it:
 
 ```sh
 # On the central node:
-dgmon server --listen 0.0.0.0:9401 --config /etc/dgmon/dgmon.json
+dgmon server --config /etc/dgmon/dgmon.json
 
 # On each GPU node:
 dgmon push --config /etc/dgmon/dgmon.json

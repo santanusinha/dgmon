@@ -15,7 +15,7 @@ binary from GitHub, and sets up a systemd service. It asks for the mode:
 For a single node:
 
 ```sh
-dgmon service --listen 0.0.0.0:9401 --config /etc/dgmon/dgmon.json
+dgmon service --config /etc/dgmon/dgmon.json
 ```
 
 ## Documentation

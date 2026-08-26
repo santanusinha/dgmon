@@ -1,0 +1,9 @@
+{
+  "interval_secs": 5,
+  "mock": false,
+  "labels": {
+    "cluster": "dgx-spark-prod"
+  },
+  "data_dir": "/var/lib/dgmon",
+  "listen": "0.0.0.0:9401"
+}

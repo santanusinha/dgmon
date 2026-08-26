@@ -55,6 +55,14 @@ pub struct CollectorConfig {
     /// values are roles (main, cluster, other).
     #[serde(default)]
     pub interface_role_overrides: HashMap<String, String>,
+
+    /// Data directory for time-series storage (server and service modes).
+    #[serde(default)]
+    pub data_dir: Option<String>,
+
+    /// Listen address for the HTTP server (server and service modes).
+    #[serde(default)]
+    pub listen: Option<String>,
 }
 
 fn default_interval() -> u64 {
@@ -71,6 +79,8 @@ impl Default for CollectorConfig {
             labels: HashMap::new(),
             inference_servers: Vec::new(),
             interface_role_overrides: HashMap::new(),
+            data_dir: None,
+            listen: None,
         }
     }
 }

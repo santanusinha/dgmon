@@ -23,9 +23,9 @@ flag or an environment variable.
 |---|---|---|---|---|
 | `--mock` | `DGMON_MOCK` | off | all | Use the mock collector instead of `nvidia-smi`. Useful for testing without a GPU. |
 | `--interval <secs>` | `DGMON_INTERVAL` | `5` | `push`, `service`, `loop` | How often to collect a snapshot, in seconds. |
-| `--listen <addr>` | `DGMON_LISTEN` | `0.0.0.0:9401` | `server`, `service` | Address and port to bind the HTTP server to. |
-| `--data-dir <path>` | `DGMON_DATA_DIR` | (required) | `server`, `service` | Path for time-series storage. Adds `/history`. |
-| `--config <file>` | `DGMON_CONFIG` | (required) | `push`, `server`, `service` | Path to the JSON config file (inference servers, interface roles). |
+| `--listen <addr>` | `DGMON_LISTEN` | `0.0.0.0:9401` | `server`, `service` | Address and port to bind the HTTP server to. Overrides the config file value. |
+| `--data-dir <path>` | `DGMON_DATA_DIR` | (from config) | `server`, `service` | Path for time-series storage. Adds `/history`. Overrides the config file value. |
+| `--config <file>` | `DGMON_CONFIG` | (none) | `push`, `server`, `service` | Path to the JSON config file. For `server`/`service`, optional when `--data-dir` is given. Required for `push`. |
 
 ### Examples
 
@@ -46,8 +46,9 @@ dgmon push --config /etc/dgmon/dgmon.json
 ## Config file
 
 Each of `push`, `server`, and `service` reads a JSON config file. The
-`server_url` key is used by `push` only; it is optional for `server` and
-`service`.
+config holds the base setup. Command-line flags override config values.
+For `server` and `service`, the config can carry `data_dir` and `listen`;
+when the config is omitted, `--data-dir` becomes mandatory.
 
 ```json
 {
@@ -61,7 +62,9 @@ Each of `push`, `server`, and `service` reads a JSON config file. The
   "inference_servers": ["http://127.0.0.1:8000"],
   "interface_role_overrides": {
     "enp1s0f0np0": "cluster"
-  }
+  },
+  "data_dir": "/var/lib/dgmon",
+  "listen": "0.0.0.0:9401"
 }
 ```
 
@@ -73,5 +76,8 @@ Each of `push`, `server`, and `service` reads a JSON config file. The
 | `labels` | `{}` | Extra labels merged into every snapshot from this node. |
 | `inference_servers` | `[]` | Manual inference server base URLs (e.g. `http://127.0.0.1:8000`). When set, discovery is skipped for these. |
 | `interface_role_overrides` | `{}` | Optional per-interface role overrides. Keys are interface names, values are roles (`main`, `cluster`, `other`). |
+| `data_dir` | (none) | Data directory for time-series storage (`server`, `service`). Required when `--data-dir` is not given. |
+| `listen` | `0.0.0.0:9401` | Listen address for the HTTP server (`server`, `service`). |
 
-See `examples/dgmon-push.json` for a complete example.
+See `examples/dgmon-push.json` for a push example and
+`examples/dgmon-server.json` for a server example.
