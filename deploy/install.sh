@@ -85,6 +85,7 @@ fi
 echo "==> dgmon installer"
 echo ""
 
+MODE=""
 while [[ "${MODE}" != "server" && "${MODE}" != "push" && "${MODE}" != "service" ]]; do
     read -r -p "Install mode (server|push|service): " MODE
     MODE="$(echo "${MODE}" | tr '[:upper:]' '[:lower:]')"
