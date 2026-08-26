@@ -23,8 +23,8 @@ echo "==> dgmon systemd uninstaller"
 echo ""
 
 # Stop and disable any dgmon unit that exists.
-for UNIT in dgmon-server dgmon-push; do
-    if systemctl list-unit-files | grep -q "^${UNIT}\.service"; then
+for UNIT in dgmon-server dgmon-push dgmon-service; do
+    if systemctl list-unit-files | grep -q "^${UNIT}\\.service"; then
         echo "==> stopping and disabling ${UNIT}"
         systemctl disable --now "${UNIT}" || true
         rm -f "${UNIT_DIR}/${UNIT}.service"
