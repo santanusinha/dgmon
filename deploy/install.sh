@@ -3,18 +3,20 @@
 # dgmon installer.
 #
 # This script installs dgmon as a systemd service. It asks for the mode:
-#   server - the central aggregation server
-#   push   - a collector agent on a GPU node
+#   server  - the central aggregation server
+#   push    - a collector agent on a GPU node
+#   service - standalone single-node mode (collect + serve locally)
 #
 # It installs:
 #   /usr/local/bin/dgmon          the binary
-#   /etc/dgmon/dgmon.json         the push config (push mode only)
+#   /etc/dgmon/dgmon.json         the config (push/server/service modes)
 #   /etc/systemd/system/dgmon-*.service
-#   /var/lib/dgmon                the time-series data dir (server mode only)
+#   /var/lib/dgmon                the time-series data dir (server/service mode only)
 #
 # Logs go to journald. View them with:
 #   journalctl -u dgmon-server -f
 #   journalctl -u dgmon-push -f
+#   journalctl -u dgmon-service -f
 #
 # Usage:
 #   sudo ./deploy/install.sh
@@ -83,10 +85,8 @@ fi
 echo "==> dgmon installer"
 echo ""
 
-# Ask for the mode.
-MODE=""
-while [[ "${MODE}" != "server" && "${MODE}" != "push" ]]; do
-    read -r -p "Install mode (server|push): " MODE
+while [[ "${MODE}" != "server" && "${MODE}" != "push" && "${MODE}" != "service" ]]; do
+    read -r -p "Install mode (server|push|service): " MODE
     MODE="$(echo "${MODE}" | tr '[:upper:]' '[:lower:]')"
 done
 
@@ -124,14 +124,26 @@ EOF
     chmod 0644 "${CONFIG_FILE}"
     echo "    ${CONFIG_FILE}"
     echo "    edit it to set labels and interval for this node."
+elif [[ "${MODE}" == "server" || "${MODE}" == "service" ]]; then
+    echo "==> writing config"
+    cat > "${CONFIG_FILE}" <<EOF
+{
+  "interval_secs": 5,
+  "mock": false,
+  "labels": {
+    "cluster": "dgx-spark-prod"
+  }
+}
+EOF
+    chmod 0644 "${CONFIG_FILE}"
+    echo "    ${CONFIG_FILE}"
+    echo "    edit it to set labels and interval for this node."
 fi
-
-if [[ "${MODE}" == "server" ]]; then
+if [[ "${MODE}" == "server" || "${MODE}" == "service" ]]; then
     echo "==> creating data dir"
     install -d -m 0755 "${DATA_DIR}"
     echo "    ${DATA_DIR}"
 fi
-
 echo "==> installing systemd unit"
 if [[ "${MODE}" == "server" ]]; then
     cat > "${UNIT_DIR}/dgmon-server.service" <<'EOF'
@@ -143,8 +155,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/dgmon server --listen 0.0.0.0:9401 --data-dir /var/lib/dgmon
+ExecStart=/usr/local/bin/dgmon server --listen 0.0.0.0:9401 --data-dir /var/lib/dgmon --config /etc/dgmon/dgmon.json
 Environment=DGMON_DATA_DIR=/var/lib/dgmon
+Environment=DGMON_CONFIG=/etc/dgmon/dgmon.json
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
@@ -158,6 +171,33 @@ StateDirectory=dgmon
 WantedBy=multi-user.target
 EOF
     UNIT="dgmon-server"
+elif [[ "${MODE}" == "service" ]]; then
+    cat > "${UNIT_DIR}/dgmon-service.service" <<'EOF'
+[Unit]
+Description=dgmon standalone service
+Documentation=https://github.com/santanusinha/dgmon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/dgmon service --listen 0.0.0.0:9401 --data-dir /var/lib/dgmon --config /etc/dgmon/dgmon.json
+Environment=DGMON_DATA_DIR=/var/lib/dgmon
+Environment=DGMON_CONFIG=/etc/dgmon/dgmon.json
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dgmon
+ReadOnlyPaths=/etc/dgmon
+StateDirectory=dgmon
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    UNIT="dgmon-service"
 else
     cat > "${UNIT_DIR}/dgmon-push.service" <<'EOF'
 [Unit]
@@ -184,7 +224,6 @@ EOF
     UNIT="dgmon-push"
 fi
 echo "    ${UNIT_DIR}/${UNIT}.service"
-
 echo "==> reloading systemd"
 systemctl daemon-reload
 

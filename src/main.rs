@@ -60,6 +60,10 @@ enum Command {
         /// When omitted, the server keeps only the latest snapshot per node.
         #[arg(long, env = "DGMON_DATA_DIR")]
         data_dir: Option<String>,
+
+        /// Path to the JSON config file (inference servers, interface roles).
+        #[arg(long, env = "DGMON_CONFIG")]
+        config: String,
     },
 
     /// Standalone service: collect locally and expose HTTP endpoints.
@@ -76,7 +80,7 @@ enum Command {
 
         /// Path to the JSON config file (inference servers, interface roles).
         #[arg(long, env = "DGMON_CONFIG")]
-        config: Option<String>,
+        config: String,
     },
 
     /// Push agent: collect locally and push snapshots to a remote dgmon server.
@@ -116,7 +120,14 @@ fn main() -> anyhow::Result<()> {
     let interval = Duration::from_secs(cli.interval);
 
     match cli.command {
-        Command::Server { listen, data_dir } => server::run(&listen, data_dir),
+        Command::Server {
+            listen,
+            data_dir,
+            config,
+        } => {
+            let cfg = config::CollectorConfig::load(std::path::Path::new(&config))?;
+            server::run(&listen, data_dir, cfg)
+        }
 
         Command::Service {
             listen,
@@ -124,21 +135,14 @@ fn main() -> anyhow::Result<()> {
             config,
         } => {
             let collector = make_collector(cli.mock);
-            // Load optional config for inference servers and interface roles.
-            let (inference_servers, interface_role_overrides) = match config {
-                Some(path) => {
-                    let cfg = config::CollectorConfig::load(std::path::Path::new(&path))?;
-                    (cfg.inference_servers, cfg.interface_role_overrides)
-                }
-                None => (Vec::new(), std::collections::HashMap::new()),
-            };
+            let cfg = config::CollectorConfig::load(std::path::Path::new(&config))?;
             service::run(
                 collector,
                 &listen,
                 interval,
                 data_dir,
-                inference_servers,
-                interface_role_overrides,
+                cfg.inference_servers,
+                cfg.interface_role_overrides,
             )
         }
 

@@ -10,12 +10,12 @@ curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/in
 
 The installer detects the local architecture, downloads the matching release
 binary from GitHub, and sets up a systemd service. It asks for the mode:
-`server` or `push`.
+`server`, `push`, or `service`.
 
 For a single node:
 
 ```sh
-dgmon service --listen 0.0.0.0:9401
+dgmon service --listen 0.0.0.0:9401 --config /etc/dgmon/dgmon.json
 ```
 
 ## Documentation

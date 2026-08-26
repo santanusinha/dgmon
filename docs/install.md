@@ -13,7 +13,7 @@ For one DGX node, run the standalone service. It collects locally and serves
 the dashboard and API on the same machine.
 
 To run it as a systemd service, use the installer script and choose
-`server` mode:
+`service` mode:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
@@ -23,14 +23,14 @@ The installer detects the local architecture, downloads the matching release
 binary from GitHub, and sets up the service. Logs go to journald:
 
 ```sh
-journalctl -u dgmon-server -f
+journalctl -u dgmon-service -f
 ```
 
 To avoid the installer, either download the binary from github or run `cargo install dgmon` to install.
 Then use the following command to run it:
 
 ```sh
-dgmon service --listen 0.0.0.0:9401
+dgmon service --listen 0.0.0.0:9401 --config /etc/dgmon/dgmon.json
 ```
 
 Open the dashboard at `http://<node-ip>:9401/`.
@@ -51,8 +51,8 @@ curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/in
 curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
 ```
 
-The installer writes the push config to `/etc/dgmon/dgmon.json` (push mode)
-and enables the service. Logs go to journald:
+The installer writes the config to `/etc/dgmon/dgmon.json` and enables the
+service. Logs go to journald:
 
 ```sh
 journalctl -u dgmon-server -f
@@ -64,7 +64,7 @@ To avoid the installer, either download the binary from github or run `cargo ins
 On the **server node**:
 
 ```sh
-dgmon server --listen 0.0.0.0:9401
+dgmon server --listen 0.0.0.0:9401 --config /etc/dgmon/dgmon.json
 ```
 
 On the **other node**, create a push config and run the push agent:
@@ -108,7 +108,7 @@ Then use the following command to run it:
 
 ```sh
 # On the central node:
-dgmon server --listen 0.0.0.0:9401
+dgmon server --listen 0.0.0.0:9401 --config /etc/dgmon/dgmon.json
 
 # On each GPU node:
 dgmon push --config /etc/dgmon/dgmon.json

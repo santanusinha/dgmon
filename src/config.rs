@@ -82,9 +82,6 @@ impl CollectorConfig {
             .map_err(|e| anyhow::anyhow!("cannot read config {}: {e}", path.display()))?;
         let cfg: Self = serde_json::from_str(&raw)
             .map_err(|e| anyhow::anyhow!("cannot parse config {}: {e}", path.display()))?;
-        if cfg.server_url.is_empty() {
-            anyhow::bail!("config {}: server_url must not be empty", path.display());
-        }
         Ok(cfg)
     }
 }

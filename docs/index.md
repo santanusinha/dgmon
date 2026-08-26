@@ -29,7 +29,7 @@ The installer asks for the mode:
 For a single node, run the standalone service:
 
 ```sh
-dgmon service --listen 0.0.0.0:9401
+dgmon service --listen 0.0.0.0:9401 --config /etc/dgmon/dgmon.json
 ```
 
 See [Install](install.md) for all install methods and

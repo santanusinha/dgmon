@@ -69,7 +69,7 @@ async fn not_found() -> impl Responder {
     HttpResponse::NotFound().finish()
 }
 
-pub fn run(addr: &str, data_dir: Option<String>) -> anyhow::Result<()> {
+pub fn run(addr: &str, data_dir: Option<String>, _config: crate::config::CollectorConfig) -> anyhow::Result<()> {
     let store = Arc::new(NodeStore::new());
 
     // Open tsink time-series storage if a data directory is provided.

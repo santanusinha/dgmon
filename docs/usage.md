@@ -8,9 +8,9 @@ icon: lucide/terminal
 
 | Command | Purpose |
 |---|---|
-| `dgmon server` | Aggregation server. Receives pushes, exposes `/metrics`, `/nodes`, `/health`. |
+| `dgmon server --config <file>` | Aggregation server. Receives pushes, exposes `/metrics`, `/nodes`, `/health`. |
 | `dgmon push --config <file>` | Collector agent. Collects locally, pushes to a remote server. |
-| `dgmon service` | Standalone single-node mode. Collects locally, serves HTTP directly. |
+| `dgmon service --config <file>` | Standalone single-node mode. Collects locally, serves HTTP directly. |
 | `dgmon once` | Collect once, print to stdout. |
 | `dgmon loop` | Collect on a loop, print to stdout. |
 
@@ -25,13 +25,13 @@ flag or an environment variable.
 | `--interval <secs>` | `DGMON_INTERVAL` | `5` | `push`, `service`, `loop` | How often to collect a snapshot, in seconds. |
 | `--listen <addr>` | `DGMON_LISTEN` | `0.0.0.0:9401` | `server`, `service` | Address and port to bind the HTTP server to. |
 | `--data-dir <path>` | `DGMON_DATA_DIR` | (none) | `server`, `service` | Enable time-series storage at this path. Adds `/history`. |
-| `--config <file>` | `DGMON_CONFIG` | (none) | `push`, `service` | Path to the JSON config file (inference servers, interface roles). |
+| `--config <file>` | `DGMON_CONFIG` | (required) | `push`, `server`, `service` | Path to the JSON config file (inference servers, interface roles). |
 
 ### Examples
 
 ```sh
 # Run the server on a specific port with history enabled
-dgmon server --listen 0.0.0.0:9402 --data-dir /var/lib/dgmon
+dgmon server --listen 0.0.0.0:9402 --data-dir /var/lib/dgmon --config /etc/dgmon/dgmon.json
 
 # Collect every 10 seconds using mock data
 dgmon --mock --interval 10 loop
@@ -43,9 +43,11 @@ dgmon push --config /etc/dgmon/dgmon.json
 > Tip: run `dgmon --help` for the full list of options, and
 > `dgmon <command> --help` for options specific to one command.
 
-## Push agent config
+## Config file
 
-Each push agent reads a JSON config file:
+Each of `push`, `server`, and `service` reads a JSON config file. The
+`server_url` key is used by `push` only; it is optional for `server` and
+`service`.
 
 ```json
 {
@@ -65,7 +67,7 @@ Each push agent reads a JSON config file:
 
 | Key | Default | Description |
 |---|---|---|
-| `server_url` | (required) | URL of the dgmon server ingest endpoint. |
+| `server_url` | (push only) | URL of the dgmon server ingest endpoint. Required for `push`. |
 | `interval_secs` | `5` | Push interval in seconds. |
 | `mock` | `false` | Use the mock collector instead of `nvidia-smi`. |
 | `labels` | `{}` | Extra labels merged into every snapshot from this node. |
