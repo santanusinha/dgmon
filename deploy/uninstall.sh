@@ -26,7 +26,8 @@ echo ""
 for UNIT in dgmon-server dgmon-push dgmon-service; do
     if systemctl list-unit-files | grep -q "^${UNIT}\\.service"; then
         echo "==> stopping and disabling ${UNIT}"
-        systemctl disable --now "${UNIT}" || true
+        systemctl stop "${UNIT}" || true
+        systemctl disable "${UNIT}" || true
         rm -f "${UNIT_DIR}/${UNIT}.service"
     fi
 done
