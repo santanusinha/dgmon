@@ -25,6 +25,9 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             binary: dgmon
             asset: dgmon-x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
+            binary: dgmon
+            asset: dgmon-x86_64-unknown-linux-musl
           - target: aarch64-unknown-linux-gnu
             binary: dgmon
             asset: dgmon-aarch64-unknown-linux-gnu
@@ -40,6 +43,10 @@ jobs:
       - name: Install cross-compilation toolchain
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install musl toolchain
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

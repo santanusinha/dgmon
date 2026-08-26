@@ -114,13 +114,6 @@ dgmon server --listen 0.0.0.0:9401
 dgmon push --config /etc/dgmon/dgmon.json
 ```
 
-Use the installer script on each node, choosing `server` on the central
-node and `push` on every other node:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/santanusinha/dgmon/master/deploy/install.sh | sudo bash
-```
-
 See [Architecture](architecture.md) for how the pieces fit together.
 
 ## Install from crates.io

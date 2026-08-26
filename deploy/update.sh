@@ -29,7 +29,7 @@ detect_asset() {
     local arch
     arch="$(uname -m)"
     case "${arch}" in
-        x86_64|amd64)  echo "dgmon-x86_64-unknown-linux-gnu" ;;
+        x86_64|amd64)  echo "dgmon-x86_64-unknown-linux-musl" ;;
         aarch64|arm64) echo "dgmon-aarch64-unknown-linux-gnu" ;;
         *) echo "error: unsupported architecture ${arch}." >&2; exit 1 ;;
     esac
@@ -44,6 +44,9 @@ download_release() {
     echo "==> downloading ${asset}"
     curl -fsSL -o "${tmp}/dgmon" "${base}/${asset}"
     curl -fsSL -o "${tmp}/dgmon.sha256" "${base}/${asset}.sha256"
+    # The checksum file names the asset (dist/<asset>). Rewrite it to name
+    # the local file so sha256sum -c can find it.
+    sed -i "s|dist/.*|dgmon|" "${tmp}/dgmon.sha256"
     (cd "${tmp}" && sha256sum -c dgmon.sha256)
     BIN_SRC="${tmp}/dgmon"
 }
