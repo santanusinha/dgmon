@@ -89,23 +89,12 @@ fn not_found(code: &str, message: &str) -> HttpResponse {
         .unwrap_or_default())
 }
 
-fn service_unavailable(code: &str, message: &str) -> HttpResponse {
-    HttpResponse::ServiceUnavailable()
-        .content_type("application/json")
-        .body(serde_json::to_string(&ApiError {
-            error: ApiErrorDetail {
-                code: code.into(),
-                message: message.into(),
-            },
-        })
-        .unwrap_or_default())
-}
 
 /// Shared state for the REST API handlers.
 pub struct ApiState {
     /// Latest snapshot per hostname (server mode) or single snapshot (service mode).
     pub snapshots: Arc<dyn SnapshotSource + Send + Sync>,
-    pub tsink: Option<Arc<TsinkStore>>,
+    pub tsink: Arc<TsinkStore>,
 }
 
 /// Abstraction over the snapshot store so the API works in both server and
@@ -195,14 +184,9 @@ pub async fn node_gpu(
     }
 }
 
-/// GET /api/v1/metrics — list available metric names (requires storage).
+/// GET /api/v1/metrics — list available metric names.
 pub async fn metrics(state: web::Data<ApiState>) -> impl Responder {
-    let Some(ref ts) = state.tsink else {
-        return service_unavailable(
-            "storage_disabled",
-            "metrics list requires time-series storage; start with --data-dir <path> or set DGMON_DATA_DIR",
-        );
-    };
+    let ts = &state.tsink;
     match ts.list_metrics() {
         Ok(names) => HttpResponse::Ok()
             .content_type("application/json")
@@ -213,17 +197,12 @@ pub async fn metrics(state: web::Data<ApiState>) -> impl Responder {
     }
 }
 
-/// GET /api/v1/metrics/{name} — latest value(s) for a metric (requires storage).
+/// GET /api/v1/metrics/{name} — latest value(s) for a metric.
 pub async fn metric_latest(
     state: web::Data<ApiState>,
     path: web::Path<String>,
 ) -> impl Responder {
-    let Some(ref ts) = state.tsink else {
-        return service_unavailable(
-            "storage_disabled",
-            "metric query requires time-series storage; start with --data-dir <path> or set DGMON_DATA_DIR",
-        );
-    };
+    let ts = &state.tsink;
     let name = path.into_inner();
     let now = chrono::Utc::now().timestamp_millis();
     // Look back 1 hour for the latest value.
@@ -261,12 +240,7 @@ pub async fn metric_history(
     path: web::Path<String>,
     query: web::Query<std::collections::HashMap<String, String>>,
 ) -> impl Responder {
-    let Some(ref ts) = state.tsink else {
-        return service_unavailable(
-            "storage_disabled",
-            "history requires time-series storage; start with --data-dir <path> or set DGMON_DATA_DIR",
-        );
-    };
+    let ts = &state.tsink;
     let name = path.into_inner();
     let start_ms: i64 = query
         .get("start")

@@ -46,9 +46,8 @@ pub struct PromResult {
     pub values: Option<Vec<Vec<serde_json::Value>>>,
 }
 
-/// Shared state for the Prometheus API handlers.
 pub struct PromState {
-    pub tsink: Option<Arc<TsinkStore>>,
+    pub tsink: Arc<TsinkStore>,
 }
 
 /// A single query in a batch request.
@@ -179,27 +178,13 @@ fn error_response(message: &str) -> HttpResponse {
         )
 }
 
-fn storage_unavailable() -> HttpResponse {
-    HttpResponse::ServiceUnavailable()
-        .content_type("application/json")
-        .body(
-            serde_json::json!({
-                "status": "error",
-                "errorType": "unavailable",
-                "error": "time-series storage is disabled; start with --data-dir <path> or set DGMON_DATA_DIR",
-            })
-            .to_string(),
-        )
-}
 
 /// GET /api/v1/query?query=<expr>&time=<unix_seconds>
 pub async fn query(
     state: web::Data<PromState>,
     query: web::Query<std::collections::HashMap<String, String>>,
 ) -> impl Responder {
-    let Some(ref ts) = state.tsink else {
-        return storage_unavailable();
-    };
+    let ts = &state.tsink;
 
     let expr = query.get("query").cloned().unwrap_or_default();
     if expr.is_empty() {
@@ -224,9 +209,7 @@ pub async fn query_range(
     state: web::Data<PromState>,
     query: web::Query<std::collections::HashMap<String, String>>,
 ) -> impl Responder {
-    let Some(ref ts) = state.tsink else {
-        return storage_unavailable();
-    };
+    let ts = &state.tsink;
 
     let expr = query.get("query").cloned().unwrap_or_default();
     if expr.is_empty() {
@@ -258,9 +241,7 @@ pub async fn query_range(
 
 /// GET /api/v1/labels — list all label names.
 pub async fn labels(state: web::Data<PromState>) -> impl Responder {
-    let Some(ref ts) = state.tsink else {
-        return storage_unavailable();
-    };
+    let ts = &state.tsink;
 
     let mut names = std::collections::BTreeSet::new();
     names.insert("__name__".to_string());
@@ -295,13 +276,10 @@ pub async fn label_values(
     state: web::Data<PromState>,
     path: web::Path<String>,
 ) -> impl Responder {
-    let Some(ref ts) = state.tsink else {
-        return storage_unavailable();
-    };
+    let ts = &state.tsink;
 
     let name = path.into_inner();
     let mut values = std::collections::BTreeSet::new();
-
     match ts.list_metrics() {
         Ok(metrics) => {
             for m in &metrics {
@@ -361,9 +339,7 @@ pub async fn query_batch(
     state: web::Data<PromState>,
     body: web::Json<BatchRequest>,
 ) -> impl Responder {
-    let Some(ref ts) = state.tsink else {
-        return storage_unavailable();
-    };
+    let ts = &state.tsink;
 
     let req = body.into_inner();
     if req.queries.is_empty() {

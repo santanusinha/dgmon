@@ -32,7 +32,7 @@ pub struct HistoryPoint {
 
 /// Shared application state for actix-web handlers.
 pub struct AppState {
-    pub tsink: Option<Arc<TsinkStore>>,
+    pub tsink: Arc<TsinkStore>,
 }
 
 /// GET / — HTML landing page with endpoint links.
@@ -354,11 +354,7 @@ pub async fn history(
     state: web::Data<AppState>,
     query: web::Query<std::collections::HashMap<String, String>>,
 ) -> impl Responder {
-    let Some(ref ts) = state.tsink else {
-        return HttpResponse::ServiceUnavailable()
-            .content_type("application/json")
-            .body(r#"{"error":"history requires time-series storage; start with --data-dir <path> or set DGMON_DATA_DIR"}"#);
-    };
+    let ts = &state.tsink;
 
     let metric = query.get("metric").cloned().unwrap_or_default();
     let hostname = query.get("hostname").cloned().unwrap_or_default();

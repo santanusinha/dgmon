@@ -29,11 +29,9 @@ Push-based cluster monitoring:
 - `src/collect.rs` — CLI collector: once / loop
 
 # Time-series storage
-- When the server or service starts with `--data-dir <path>`, every snapshot
-  is written to a tsink embedded time-series database at that path.
+- The server and service require `--data-dir <path>`. Every snapshot is
+  written to a tsink embedded time-series database at that path.
 - The tsink database stores full history with a 30-day retention window.
-- Without `--data-dir`, the server and service operate in memory-only mode and store
-  only the latest snapshot per node for Prometheus scraping.
 - The `DGMON_DATA_DIR` environment variable sets the same option.
 
 # HTTP API routes
@@ -41,7 +39,7 @@ Push-based cluster monitoring:
 - `GET /health` — returns `ok` (liveness probe)
 - `GET /metrics` — Prometheus text format output
 - `POST /ingest` — accepts a JSON snapshot from a push agent (server mode only)
-- `GET /history?metric=<name>&hostname=<host>&start=<ms>&end=<ms>` — JSON time-series query (requires `--data-dir`)
+- `GET /history?metric=<name>&hostname=<host>&start=<ms>&end=<ms>` — JSON time-series query
 
 # REST API routes (/api/v1/)
 - `GET /api/v1/nodes` — list nodes
@@ -49,15 +47,15 @@ Push-based cluster monitoring:
 - `GET /api/v1/nodes/{hostname}/host` — host metrics only
 - `GET /api/v1/nodes/{hostname}/gpus` — GPU list for one node
 - `GET /api/v1/nodes/{hostname}/gpus/{index}` — one GPU
-- `GET /api/v1/metrics` — list available metric names (requires `--data-dir`)
-- `GET /api/v1/metrics/{name}` — latest value(s) for a metric (requires `--data-dir`)
-- `GET /api/v1/metrics/{name}/history?start=<ms>&end=<ms>` — time-series for a metric (requires `--data-dir`)
-- `GET /api/v1/query?query=<expr>&time=<s>` — Prometheus instant query (requires `--data-dir`)
-- `GET /api/v1/query_range?query=<expr>&start=<s>&end=<s>&step=<s>` — Prometheus range query (requires `--data-dir`)
-- `GET /api/v1/labels` — list label names (requires `--data-dir`)
-- `GET /api/v1/label/{name}/values` — list values for one label (requires `--data-dir`)
+- `GET /api/v1/metrics` — list available metric names
+- `GET /api/v1/metrics/{name}` — latest value(s) for a metric
+- `GET /api/v1/metrics/{name}/history?start=<ms>&end=<ms>` — time-series for a metric
+- `GET /api/v1/query?query=<expr>&time=<s>` — Prometheus instant query
+- `GET /api/v1/query_range?query=<expr>&start=<s>&end=<s>&step=<s>` — Prometheus range query
+- `GET /api/v1/labels` — list label names
+- `GET /api/v1/label/{name}/values` — list values for one label
 - `GET /api/v1/status/buildinfo` — version info
-- `POST /api/v1/query_batch` — evaluate many queries in one round trip (requires `--data-dir`)
+- `POST /api/v1/query_batch` — evaluate many queries in one round trip
 - CORS is enabled for all origins.
 
 # Key design decisions

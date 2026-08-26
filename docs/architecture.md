@@ -59,9 +59,7 @@ For single-node use, `dgmon service` collects locally and serves directly.
 
 ## Time-series storage
 
-- When the server or service starts with `--data-dir <path>`, every snapshot
-  is written to a tsink embedded time-series database at that path.
+- The server and service require `--data-dir <path>`. Every snapshot is
+  written to a tsink embedded time-series database at that path.
 - The tsink database stores full history with a 30-day retention window.
-- Without `--data-dir`, the server and service operate in memory-only mode
-  and store only the latest snapshot per node for Prometheus scraping.
 - The `DGMON_DATA_DIR` environment variable sets the same option.

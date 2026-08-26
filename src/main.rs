@@ -56,10 +56,9 @@ enum Command {
         #[arg(long, env = "DGMON_LISTEN", default_value = "0.0.0.0:9401")]
         listen: String,
 
-        /// Data directory for time-series storage (enables history).
-        /// When omitted, the server keeps only the latest snapshot per node.
+        /// Data directory for time-series storage.
         #[arg(long, env = "DGMON_DATA_DIR")]
-        data_dir: Option<String>,
+        data_dir: String,
 
         /// Path to the JSON config file (inference servers, interface roles).
         #[arg(long, env = "DGMON_CONFIG")]
@@ -73,10 +72,9 @@ enum Command {
         #[arg(long, env = "DGMON_LISTEN", default_value = "0.0.0.0:9401")]
         listen: String,
 
-        /// Data directory for time-series storage (enables history).
-        /// When omitted, the service keeps only the latest snapshot in memory.
+        /// Data directory for time-series storage.
         #[arg(long, env = "DGMON_DATA_DIR")]
-        data_dir: Option<String>,
+        data_dir: String,
 
         /// Path to the JSON config file (inference servers, interface roles).
         #[arg(long, env = "DGMON_CONFIG")]
@@ -126,7 +124,7 @@ fn main() -> anyhow::Result<()> {
             config,
         } => {
             let cfg = config::CollectorConfig::load(std::path::Path::new(&config))?;
-            server::run(&listen, data_dir, cfg)
+            server::run(&listen, &data_dir, cfg)
         }
 
         Command::Service {
@@ -140,7 +138,7 @@ fn main() -> anyhow::Result<()> {
                 collector,
                 &listen,
                 interval,
-                data_dir,
+                &data_dir,
                 cfg.inference_servers,
                 cfg.interface_role_overrides,
             )

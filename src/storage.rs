@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Time-series storage backed by tsink.
 //!
-//! When the server starts with `--data-dir`, every ingested snapshot
-//! is written to tsink as labeled time-series data. This gives the
-//! server historical query capability and automatic retention.
-//!
-//! The in-memory HashMap in `server.rs` still holds the latest snapshot
-//! per node for fast Prometheus scraping. tsink stores the full history.
+//! Every ingested snapshot is written to tsink as labeled time-series
+//! data. This gives the server historical query capability and automatic
+//! retention. The in-memory store holds the latest snapshot per node for
+//! fast Prometheus scraping; tsink stores the full history.
 
 use std::sync::Arc;
 use std::time::Duration;

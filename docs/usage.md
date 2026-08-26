@@ -24,7 +24,7 @@ flag or an environment variable.
 | `--mock` | `DGMON_MOCK` | off | all | Use the mock collector instead of `nvidia-smi`. Useful for testing without a GPU. |
 | `--interval <secs>` | `DGMON_INTERVAL` | `5` | `push`, `service`, `loop` | How often to collect a snapshot, in seconds. |
 | `--listen <addr>` | `DGMON_LISTEN` | `0.0.0.0:9401` | `server`, `service` | Address and port to bind the HTTP server to. |
-| `--data-dir <path>` | `DGMON_DATA_DIR` | (none) | `server`, `service` | Enable time-series storage at this path. Adds `/history`. |
+| `--data-dir <path>` | `DGMON_DATA_DIR` | (required) | `server`, `service` | Path for time-series storage. Adds `/history`. |
 | `--config <file>` | `DGMON_CONFIG` | (required) | `push`, `server`, `service` | Path to the JSON config file (inference servers, interface roles). |
 
 ### Examples

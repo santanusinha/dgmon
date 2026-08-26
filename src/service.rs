@@ -54,9 +54,7 @@ async fn ingest(
     let n_gpus = snap.gpus.len();
 
     // Write to tsink for historical storage.
-    if let Some(ref ts) = state.http.tsink
-        && let Err(e) = ts.write_snapshot(&snap)
-    {
+    if let Err(e) = state.http.tsink.write_snapshot(&snap) {
         tracing::warn!("tsink write failed for {hostname}: {e:#}");
     }
 
@@ -74,41 +72,32 @@ pub fn run(
     collector: Arc<dyn Collector>,
     addr: &str,
     interval: Duration,
-    data_dir: Option<String>,
+    data_dir: &str,
     inference_servers: Vec<String>,
     interface_role_overrides: HashMap<String, String>,
 ) -> anyhow::Result<()> {
     let store = Arc::new(NodeStore::new());
 
-    // Open tsink time-series storage if a data directory is provided.
-    let tsink: Option<Arc<TsinkStore>> = match data_dir {
-        Some(dir) => {
-            tracing::info!("time-series storage enabled: {dir}");
-            let ts = Arc::new(TsinkStore::open(&dir)?);
-            Some(ts)
-        }
-        None => {
-            tracing::info!("time-series storage disabled (no --data-dir)");
-            None
-        }
-    };
+    // Open tsink time-series storage.
+    tracing::info!("time-series storage enabled: {data_dir}");
+    let tsink = Arc::new(TsinkStore::open(data_dir)?);
 
     let service_state = web::Data::new(ServiceState {
         store: Arc::clone(&store),
-        http: AppState { tsink: tsink.clone() },
+        http: AppState { tsink: Arc::clone(&tsink) },
     });
 
     // REST API state: expose the node store and tsink to /api/v1 handlers.
     let api_state = web::Data::new(ApiState {
         snapshots: store.clone() as Arc<dyn SnapshotSource + Send + Sync>,
-        tsink: service_state.http.tsink.clone(),
+        tsink: Arc::clone(&tsink),
     });
 
     let addr_owned = addr.to_string();
     let sys = actix_rt::System::new();
 
     // Clone tsink before the closure so it is available after the server stops.
-    let tsink_shutdown = service_state.http.tsink.clone();
+    let tsink_shutdown = Arc::clone(&tsink);
 
     sys.block_on(async move {
         // Build an async reqwest client for inference scraping.
@@ -127,7 +116,7 @@ pub fn run(
         // HTTP server. Uses tokio::time::interval for pacing and
         // spawn_blocking for the blocking collector call.
         let store_bg = Arc::clone(&store);
-        let tsink_bg = tsink.clone();
+        let tsink_bg = Arc::clone(&tsink);
         let inference_servers_bg = inference_servers.clone();
         let interface_role_overrides_bg = interface_role_overrides.clone();
         actix_rt::spawn(collect_loop(
@@ -193,12 +182,10 @@ pub fn run(
         server.await.map_err(|e| anyhow::anyhow!("server error: {e}"))?;
 
         // Server has stopped. Flush tsink so no in-memory data is lost.
-        if let Some(ref ts) = tsink_shutdown {
-            if let Err(e) = ts.close() {
-                tracing::warn!("tsink close failed: {e:#}");
-            } else {
-                tracing::info!("tsink storage flushed and closed");
-            }
+        if let Err(e) = tsink_shutdown.close() {
+            tracing::warn!("tsink close failed: {e:#}");
+        } else {
+            tracing::info!("tsink storage flushed and closed");
         }
 
         Ok(())
@@ -208,7 +195,7 @@ pub fn run(
 /// Background collection loop: collect locally and store in the node store.
 async fn collect_loop(
     store: Arc<NodeStore>,
-    tsink: Option<Arc<TsinkStore>>,
+    tsink: Arc<TsinkStore>,
     collector: Arc<dyn Collector>,
     interval: Duration,
     inference_servers: Vec<String>,
@@ -253,9 +240,7 @@ async fn collect_loop(
         tracing::debug!("collected snapshot: {n} GPUs");
 
         // Write to tsink for historical storage.
-        if let Some(ref ts) = tsink
-            && let Err(e) = ts.write_snapshot(&snap)
-        {
+        if let Err(e) = tsink.write_snapshot(&snap) {
             tracing::warn!("tsink write failed: {e:#}");
         }
 

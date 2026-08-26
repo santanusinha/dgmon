@@ -29,7 +29,7 @@ browsers, scripts, and mobile apps. CORS is enabled for all origins.
 | `GET` | `/api/v1/nodes/{hostname}/gpus` | GPU list for one node. |
 | `GET` | `/api/v1/nodes/{hostname}/gpus/{index}` | One GPU by index. |
 
-### Metrics (requires `--data-dir`)
+### Metrics
 
 | Method | Path | Description |
 |---|---|---|
@@ -37,7 +37,7 @@ browsers, scripts, and mobile apps. CORS is enabled for all origins.
 | `GET` | `/api/v1/metrics/{name}` | Latest value(s) for a metric. |
 | `GET` | `/api/v1/metrics/{name}/history?start=<ms>&end=<ms>` | Time-series for a metric. |
 
-### Prometheus API (requires `--data-dir`)
+### Prometheus API
 
 These endpoints follow the Prometheus HTTP API envelope. A Prometheus
 datasource can point directly at dgmon without a proxy.
