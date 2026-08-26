@@ -181,6 +181,7 @@ ReadOnlyPaths=/etc/dgmon
 [Install]
 WantedBy=multi-user.target
 EOF
+    UNIT="dgmon-push"
 fi
 echo "    ${UNIT_DIR}/${UNIT}.service"
 
