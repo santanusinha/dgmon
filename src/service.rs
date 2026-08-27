@@ -141,6 +141,7 @@ pub fn run(
                 .configure(api::configure)
                 .app_data(web::Data::new(PromState {
                     tsink: service_state.http.tsink.clone(),
+                    control_enabled: false,
                 }))
                 .route("/", web::get().to(http::index))
                 .route("/dashboard", web::get().to(http::dashboard))

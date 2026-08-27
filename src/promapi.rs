@@ -48,8 +48,10 @@ pub struct PromResult {
 
 pub struct PromState {
     pub tsink: Arc<TsinkStore>,
+    /// Whether the control plane is enabled. The dashboard uses this to
+    /// decide whether to show the Control tab.
+    pub control_enabled: bool,
 }
-
 /// A single query in a batch request.
 #[derive(Deserialize)]
 pub struct BatchQuery {
@@ -309,7 +311,7 @@ pub async fn label_values(
 }
 
 /// GET /api/v1/status/buildinfo — version info Grafana probes on connect.
-pub async fn buildinfo() -> impl Responder {
+pub async fn buildinfo(state: web::Data<PromState>) -> impl Responder {
     HttpResponse::Ok()
         .content_type("application/json")
         .body(
@@ -322,6 +324,7 @@ pub async fn buildinfo() -> impl Responder {
                     "buildUser": "dgmon",
                     "buildDate": "",
                     "goVersion": "rust",
+                    "controlEnabled": state.control_enabled,
                 },
             })
             .to_string(),

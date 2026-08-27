@@ -45,6 +45,14 @@ if [[ -d "${DATA_DIR}" ]]; then
     rm -rf "${DATA_DIR}"
 fi
 
+echo "==> removing sudoers rule"
+rm -f /etc/sudoers.d/dgmon
+
+echo "==> removing dgmon user"
+if id -u dgmon >/dev/null 2>&1; then
+    userdel dgmon || true
+fi
+
 echo ""
 echo "==> done"
 echo "    binary still at /usr/local/bin/dgmon (remove it manually if wanted)."

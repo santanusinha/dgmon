@@ -309,3 +309,73 @@ canvas.chart { display: block; }
 /* ── cluster per-node table ── */
 #cluster-table-body td.idx { color: var(--accent); font-weight: 600; }
 #cluster-table-body td.num { text-align: right; }
+
+/* ── control view ── */
+#control-table-body td.actions { white-space: nowrap; }
+
+.btn-action {
+  font: inherit; font-size: 12px; font-weight: 600;
+  padding: 6px 14px;
+  border: 1px solid var(--line-1);
+  border-radius: 7px;
+  background: var(--bg-1);
+  color: var(--txt-2);
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, opacity .15s;
+}
+.btn-action:hover { color: var(--txt-1); border-color: var(--line-2); }
+.btn-action:disabled { opacity: .45; cursor: not-allowed; }
+
+.btn-action.restart { color: var(--amber); border-color: rgba(217, 119, 6, 0.4); }
+.btn-action.restart:hover { background: rgba(217, 119, 6, 0.08); border-color: var(--amber); }
+
+.btn-action.shutdown { color: var(--red); border-color: rgba(220, 38, 38, 0.4); }
+.btn-action.shutdown:hover { background: rgba(220, 38, 38, 0.08); border-color: var(--red); }
+
+.btn-action.cancel { color: var(--txt-2); }
+.btn-action.confirm { color: #fff; background: var(--red); border-color: var(--red); }
+.btn-action.confirm:hover { background: var(--red); color: #fff; }
+
+.badge-pending {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.badge-pending.restart { color: var(--amber); background: rgba(217, 119, 6, 0.12); }
+.badge-pending.shutdown { color: var(--red); background: rgba(220, 38, 38, 0.12); }
+.badge-none { font-size: 11px; color: var(--txt-3); }
+
+/* ── confirmation modal ── */
+.modal {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(13, 17, 23, 0.55);
+  backdrop-filter: blur(2px);
+}
+.modal[hidden] { display: none; }
+.modal-box {
+  width: 400px; max-width: 90vw;
+  padding: 24px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+.modal-box h3 { font-size: 16px; font-weight: 600; color: var(--txt-1); margin-bottom: 10px; }
+.modal-box p { font-size: 13px; color: var(--txt-2); margin-bottom: 20px; line-height: 1.5; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ── toast ── */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 110;
+  font-size: 13px; font-weight: 500;
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  color: #fff;
+}
+.toast[hidden] { display: none; }
+.toast.success { background: var(--green); }
+.toast.error { background: var(--red); }

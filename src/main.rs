@@ -17,6 +17,7 @@ mod api;
 mod collect;
 mod collector;
 mod config;
+mod control;
 mod http;
 mod inference;
 mod metric_name;

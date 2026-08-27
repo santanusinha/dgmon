@@ -97,6 +97,37 @@ query, that id maps to `{ "error": "..." }`. Other queries still succeed.
 - Errors use a consistent shape:
   `{"error": {"code": "...", "message": "..."}}`.
 
+### Control plane
+
+The control plane lets an operator perform basic node operations from the
+central server. It is **disabled by default**. Enable it in the server
+config:
+
+```json
+{
+  "control": {
+    "enabled": true
+  }
+}
+```
+
+When enabled, the following routes are available under `/api/v1/control/`:
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/control/nodes/{hostname}/restart` | Queue a restart for a node. |
+| `POST` | `/api/v1/control/nodes/{hostname}/shutdown` | Queue a shutdown for a node. |
+| `GET` | `/api/v1/control/mailbox` | Poll for a pending command (agent). |
+| `POST` | `/api/v1/control/mailbox/ack` | Ack + clear a pending command (agent). |
+| `GET` | `/api/v1/control/nodes` | List nodes with pending commands. |
+
+The push agent on each node polls the mailbox on every collection cycle.
+When a command is pending, the agent acks it and executes it locally via
+`sudo shutdown -r now` (restart) or `sudo shutdown -h now` (shutdown).
+
+The agent identifies itself with the `User-Agent` header
+`dgmon-push/<hostname>`.
+
 ### Examples
 
 ```sh
@@ -111,4 +142,13 @@ curl http://localhost:9401/api/v1/nodes/host1/gpus
 
 # Metric history (last hour)
 curl 'http://localhost:9401/api/v1/metrics/dgmon_cpu_usage_pct/history?start=0&end=$(date +%s)000'
+
+# Queue a restart for a node (control plane must be enabled)
+curl -X POST http://localhost:9401/api/v1/control/nodes/host1/restart
+
+# Queue a shutdown for a node
+curl -X POST http://localhost:9401/api/v1/control/nodes/host1/shutdown
+
+# List nodes with pending commands
+curl http://localhost:9401/api/v1/control/nodes
 ```

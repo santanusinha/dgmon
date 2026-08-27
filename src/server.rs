@@ -15,6 +15,7 @@ use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 
 use crate::api::{self, ApiState, SnapshotSource};
 use crate::collector::Snapshot;
+use crate::control::{self, ControlState};
 use crate::http::{self, AppState};
 use crate::promapi::PromState;
 use crate::storage::TsinkStore;
@@ -67,11 +68,10 @@ async fn not_found() -> impl Responder {
     HttpResponse::NotFound().finish()
 }
 
-pub fn run(addr: &str, data_dir: &str, _config: crate::config::CollectorConfig) -> anyhow::Result<()> {
+pub fn run(addr: &str, data_dir: &str, config: crate::config::CollectorConfig) -> anyhow::Result<()> {
     let store = Arc::new(NodeStore::new());
 
     // Open tsink time-series storage.
-    tracing::info!("time-series storage enabled: {data_dir}");
     let tsink = Arc::new(TsinkStore::open(data_dir)?);
 
     let server_state = web::Data::new(ServerState {
@@ -85,6 +85,14 @@ pub fn run(addr: &str, data_dir: &str, _config: crate::config::CollectorConfig) 
         tsink: Arc::clone(&tsink),
     });
 
+    // Control-plane state: mailbox + snapshot source. Only active when
+    // the config enables it.
+    let control_enabled = config.control.as_ref().map(|c| c.enabled).unwrap_or(false);
+    let control_state = web::Data::new(ControlState {
+        mailbox: control::Mailbox::new(),
+        snapshots: store.clone() as Arc<dyn SnapshotSource + Send + Sync>,
+    });
+
     let addr_owned = addr.to_string();
     let sys = actix_rt::System::new();
 
@@ -93,7 +101,7 @@ pub fn run(addr: &str, data_dir: &str, _config: crate::config::CollectorConfig) 
     sys.block_on(async move {
         let server = HttpServer::new(move || {
             let cors = Cors::permissive();
-            App::new()
+            let mut app = App::new()
                 .wrap(cors)
                 .app_data(server_state.clone())
                 .app_data(api_state.clone())
@@ -103,8 +111,12 @@ pub fn run(addr: &str, data_dir: &str, _config: crate::config::CollectorConfig) 
                 .configure(api::configure)
                 .app_data(web::Data::new(PromState {
                     tsink: server_state.http.tsink.clone(),
-                }))
-                .route("/", web::get().to(http::index))
+                    control_enabled,
+                }));
+            if control_enabled {
+                app = app.app_data(control_state.clone());
+            }
+            app.route("/", web::get().to(http::index))
                 .route("/dashboard", web::get().to(http::dashboard))
                 .route("/static/style.css", web::get().to(http::style_css))
                 .route("/static/app.js", web::get().to(http::app_js))

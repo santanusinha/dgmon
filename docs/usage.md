@@ -64,7 +64,10 @@ when the config is omitted, `--data-dir` becomes mandatory.
     "enp1s0f0np0": "cluster"
   },
   "data_dir": "/var/lib/dgmon",
-  "listen": "0.0.0.0:9401"
+  "listen": "0.0.0.0:9401",
+  "control": {
+    "enabled": true
+  }
 }
 ```
 
@@ -73,11 +76,38 @@ when the config is omitted, `--data-dir` becomes mandatory.
 | `server_url` | (push only) | URL of the dgmon server ingest endpoint. Required for `push`. |
 | `interval_secs` | `5` | Push interval in seconds. |
 | `mock` | `false` | Use the mock collector instead of `nvidia-smi`. |
-| `labels` | `{}` | Extra labels merged into every snapshot from this node. |
-| `inference_servers` | `[]` | Manual inference server base URLs (e.g. `http://127.0.0.1:8000`). When set, discovery is skipped for these. |
-| `interface_role_overrides` | `{}` | Optional per-interface role overrides. Keys are interface names, values are roles (`main`, `cluster`, `other`). |
 | `data_dir` | (none) | Data directory for time-series storage (`server`, `service`). Required when `--data-dir` is not given. |
 | `listen` | `0.0.0.0:9401` | Listen address for the HTTP server (`server`, `service`). |
+| `control` | (off) | Control-plane config. Set `enabled: true` to activate the control plane. |
 
 See `examples/dgmon-push.json` for a push example and
 `examples/dgmon-server.json` for a server example.
+
+## Control plane
+
+The control plane lets an operator restart or shutdown nodes from the
+central server. It is **disabled by default** for safety. Enable it in the
+server config:
+
+```json
+{
+  "control": {
+    "enabled": true
+  }
+}
+```
+
+When enabled, the push agent on each node polls the server for pending
+commands on every collection cycle. Commands are delivered within one push
+interval (default 5 seconds).
+
+To queue a restart or shutdown:
+
+```sh
+curl -X POST http://SERVER:9401/api/v1/control/nodes/NODE/restart
+curl -X POST http://SERVER:9401/api/v1/control/nodes/NODE/shutdown
+```
+
+The agent executes the command locally via `sudo shutdown`. The agent runs
+as a dedicated `dgmon` user with a sudoers rule that allows only the
+`shutdown` binary. See `deploy/` for the setup scripts.
