@@ -111,6 +111,7 @@ pub fn run(addr: &str, data_dir: &str, config: crate::config::CollectorConfig) -
                 .configure(api::configure)
                 .app_data(web::Data::new(PromState {
                     tsink: server_state.http.tsink.clone(),
+                    control_enabled,
                 }));
             if control_enabled {
                 app = app.app_data(control_state.clone());

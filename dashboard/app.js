@@ -63,7 +63,9 @@ const fetchJSON = async (url, opts) => {
 async function init() {
   setupThemeToggle();
   setupTabs();
+  setupControlModal();
   setInterval(refreshNodes, 15000);
+  await probeControlEnabled();
   await refreshAll();
   state.timer = setInterval(refreshAll, REFRESH_MS);
 }
@@ -76,6 +78,8 @@ function setupTabs() {
       document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
       document.getElementById("view-cluster").hidden = state.view !== "cluster";
       document.getElementById("view-host").hidden = state.view !== "host";
+      document.getElementById("view-control").hidden = state.view !== "control";
+      if (state.view === "control") refreshControl();
     })
   );
 }
@@ -629,6 +633,162 @@ function updateCharts(data, now) {
     if (!resp) continue;
     createOrUpdateChart(def, resp, now);
   }
+}
+
+/* -- control view -- */
+let controlNodes = [];
+let controlDisabled = false;
+
+/*
+ * Probe the server to learn whether the control plane is enabled.
+ * The buildinfo endpoint reports it. When the control plane is off,
+ * hide the Control tab entirely instead of showing a dead section.
+ */
+async function probeControlEnabled() {
+  try {
+    const info = await fetchJSON("/api/v1/status/buildinfo");
+    const enabled = !!(info.data && info.data.controlEnabled);
+    setControlTabVisible(enabled);
+    if (enabled) await refreshControl();
+  } catch (_) {
+    // Fall back to showing the tab; refreshControl handles the disabled case.
+    setControlTabVisible(true);
+  }
+}
+
+function setControlTabVisible(visible) {
+  const tab = document.querySelector('.tab[data-view="control"]');
+  if (tab) tab.style.display = visible ? "" : "none";
+  if (!visible && state.view === "control") {
+    // Switch back to the cluster view so the user is not left on a hidden tab.
+    state.view = "cluster";
+    document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.view === "cluster"));
+    document.getElementById("view-cluster").hidden = false;
+    document.getElementById("view-host").hidden = true;
+    document.getElementById("view-control").hidden = true;
+  }
+}
+function setupControlModal() {
+  document.getElementById("control-modal-cancel").addEventListener("click", closeControlModal);
+  document.getElementById("control-modal-confirm").addEventListener("click", confirmControlActionSend);
+  document.getElementById("control-modal").addEventListener("click", (e) => {
+    if (e.target === document.getElementById("control-modal")) closeControlModal();
+  });
+}
+async function refreshControl() {
+  try {
+    const nodes = await fetchJSON("/api/v1/control/nodes");
+    controlDisabled = false;
+    controlNodes = Array.isArray(nodes) ? nodes : [];
+    renderControlTable();
+    setControlDisabled(false);
+  } catch (e) {
+    // 404 means the control plane is disabled.
+    controlDisabled = true;
+    controlNodes = [];
+    renderControlTable();
+    setControlDisabled(true);
+  }
+}
+
+function setControlDisabled(disabled) {
+  document.getElementById("control-disabled").hidden = !disabled;
+}
+
+function renderControlTable() {
+  const body = document.getElementById("control-table-body");
+  const empty = document.getElementById("control-empty");
+
+  if (controlDisabled) {
+    updateHTML(body, "", "control-table");
+    empty.style.display = "none";
+    return;
+  }
+
+  if (!controlNodes.length) {
+    updateHTML(body, "", "control-table");
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+
+  updateHTML(body, controlNodes.map((n) => {
+    const host = esc(n.hostname);
+    const gpus = n.gpus != null ? fmt(n.gpus, 0) : "—";
+    const lastSeen = n.timestamp ? new Date(n.timestamp).toLocaleTimeString() : "—";
+    const pending = n.pending_command;
+    const pendingHtml = pending
+      ? `<span class="badge-pending ${pending.op === "restart" ? "restart" : "shutdown"}">${esc(pending.op)} · ${new Date(pending.issued_at).toLocaleTimeString()}</span>`
+      : '<span class="badge-none">none</span>';
+    const disabled = pending ? "disabled" : "";
+    return `<tr>
+      <td class="idx">${host}</td>
+      <td class="num">${gpus}</td>
+      <td class="num">${lastSeen}</td>
+      <td>${pendingHtml}</td>
+      <td class="actions">
+        <button class="btn-action restart" data-host="${esc(n.hostname)}" data-op="restart" ${disabled}>Restart</button>
+        <button class="btn-action shutdown" data-host="${esc(n.hostname)}" data-op="shutdown" ${disabled}>Shutdown</button>
+      </td>
+    </tr>`;
+  }).join(""), "control-table");
+
+  body.querySelectorAll(".btn-action").forEach((btn) =>
+    btn.addEventListener("click", () => confirmControlAction(btn.dataset.host, btn.dataset.op))
+  );
+}
+
+/* -- confirmation modal -- */
+let pendingAction = null;
+
+function confirmControlAction(hostname, op) {
+  pendingAction = { hostname, op };
+  const modal = document.getElementById("control-modal");
+  const title = document.getElementById("control-modal-title");
+  const msg = document.getElementById("control-modal-msg");
+  title.textContent = op === "restart" ? "Restart Node" : "Shutdown Node";
+  msg.textContent = `Are you sure you want to ${op} ${hostname}? This action is destructive and cannot be undone.`;
+  modal.hidden = false;
+}
+
+function closeControlModal() {
+  pendingAction = null;
+  document.getElementById("control-modal").hidden = true;
+}
+
+async function confirmControlActionSend() {
+  if (!pendingAction) return;
+  const { hostname, op } = pendingAction;
+  closeControlModal();
+  try {
+    const r = await fetch(`/api/v1/control/nodes/${encodeURIComponent(hostname)}/${op}`, { method: "POST" });
+    if (r.ok) {
+      await r.json();
+      showToast(`${op} queued for ${hostname}`, "success");
+    } else {
+      let msg = `${op} failed (${r.status})`;
+      try {
+        const err = await r.json();
+        if (err && err.error && err.error.message) msg = err.error.message;
+      } catch (_) { /* ignore parse error */ }
+      showToast(msg, "error");
+    }
+    refreshControl();
+  } catch (e) {
+    showToast(`request failed: ${e.message}`, "error");
+  }
+}
+
+/* -- toast -- */
+let toastTimer = null;
+
+function showToast(message, type) {
+  const toast = document.getElementById("control-toast");
+  toast.textContent = message;
+  toast.className = "toast " + (type === "success" ? "success" : "error");
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 4000);
 }
 
 /* -- helpers -- */

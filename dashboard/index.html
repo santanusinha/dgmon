@@ -23,6 +23,7 @@
   <nav class="tabs">
     <button class="tab active" data-view="cluster">Cluster</button>
     <button class="tab" data-view="host">Host</button>
+    <button class="tab" data-view="control">Control</button>
   </nav>
 
   <main class="wrap">
@@ -161,6 +162,7 @@
             <div class="t"><span>Mem Clock</span><span class="now" id="now-mem-clock">—</span></div>
             <div id="chart-mem-clock" class="cv"><canvas width="400" height="200"></canvas></div>
           </div>
+        </div>
       </section>
 
       <section>
@@ -184,7 +186,49 @@
 
     </div>
 
+    <!-- ═══════════ CONTROL VIEW (tab) ═══════════ -->
+    <div id="view-control" class="view" hidden>
+
+      <section>
+        <div class="section-head">
+          <h2>Node Control</h2>
+          <span class="hint">restart or shutdown nodes</span>
+        </div>
+        <div id="control-disabled" class="empty-note" hidden>
+          Control plane is disabled. Enable it in the server config:
+          <code>{"control": {"enabled": true}}</code>
+        </div>
+        <div class="gpu-card">
+          <table class="gpu">
+            <thead>
+              <tr>
+                <th>Node</th><th>GPUs</th><th>Last Seen</th><th>Pending Command</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="control-table-body"></tbody>
+          </table>
+          <div id="control-empty" class="empty-note">No nodes yet — waiting for first snapshot…</div>
+        </div>
+      </section>
+
+    </div>
+
   </main>
+
+  <!-- Confirmation modal for destructive control actions -->
+  <div id="control-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="control-modal-title">Confirm</h3>
+      <p id="control-modal-msg"></p>
+      <div class="modal-actions">
+        <button class="btn-action cancel" id="control-modal-cancel">Cancel</button>
+        <button class="btn-action confirm" id="control-modal-confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="control-toast" class="toast" hidden></div>
 
   <script src="/static/chart.umd.min.js"></script>
   <script src="/static/app.js"></script>
