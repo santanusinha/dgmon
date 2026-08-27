@@ -16,6 +16,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=dgmon
+Group=dgmon
 # Path to the dgmon binary and the push config. Adjust for your install.
 ExecStart=/usr/local/bin/dgmon push --config /etc/dgmon/dgmon.json
 Environment=DGMON_CONFIG=/etc/dgmon/dgmon.json
@@ -27,6 +29,5 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadOnlyPaths=/etc/dgmon
-
 [Install]
 WantedBy=multi-user.target

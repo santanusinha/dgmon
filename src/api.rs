@@ -316,6 +316,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/metrics/{name}", web::get().to(metric_latest))
             .route("/metrics/{name}/history", web::get().to(metric_history))
             // Prometheus-compatible API routes share the same /api/v1 scope.
-            .configure(promapi::configure),
+            .configure(promapi::configure)
+            // Control-plane routes share the same /api/v1 scope.
+            .configure(crate::control::configure),
     );
 }

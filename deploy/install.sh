@@ -147,6 +147,25 @@ if [[ "${MODE}" == "server" || "${MODE}" == "service" ]]; then
     install -d -m 0755 "${DATA_DIR}"
     echo "    ${DATA_DIR}"
 fi
+
+# Create a dedicated dgmon user for the push agent. This user runs the
+# agent and has a sudoers rule that allows only the shutdown binary.
+if [[ "${MODE}" == "push" ]]; then
+    echo "==> creating dgmon user"
+    if ! id -u dgmon >/dev/null 2>&1; then
+        useradd --system --home-dir /var/lib/dgmon --shell /usr/sbin/nologin dgmon
+    fi
+    echo "    user dgmon"
+
+    echo "==> installing sudoers rule"
+    install -d -m 0750 /etc/sudoers.d
+    cat > /etc/sudoers.d/dgmon <<'EOF'
+# Allow the dgmon user to run only the shutdown binary.
+dgmon ALL=(root) NOPASSWD: /usr/sbin/shutdown
+EOF
+    chmod 0440 /etc/sudoers.d/dgmon
+    echo "    /etc/sudoers.d/dgmon"
+fi
 echo "==> installing systemd unit"
 if [[ "${MODE}" == "server" ]]; then
     cat > "${UNIT_DIR}/dgmon-server.service" <<'EOF'
@@ -209,6 +228,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=dgmon
+Group=dgmon
 ExecStart=/usr/local/bin/dgmon push --config /etc/dgmon/dgmon.json
 Environment=DGMON_CONFIG=/etc/dgmon/dgmon.json
 Restart=on-failure
