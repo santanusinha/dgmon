@@ -66,6 +66,8 @@ if systemctl is-active --quiet dgmon-server 2>/dev/null; then
     UNIT="dgmon-server"
 elif systemctl is-active --quiet dgmon-push 2>/dev/null; then
     UNIT="dgmon-push"
+elif systemctl is-active --quiet dgmon-service 2>/dev/null; then
+    UNIT="dgmon-service"
 fi
 
 if [[ -n "${UNIT}" ]]; then
