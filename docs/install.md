@@ -166,7 +166,7 @@ update.
 To pin a specific version instead of `latest`, set the `VERSION` variable:
 
 ```sh
-VERSION=v0.1.3 sudo ./deploy/update.sh
+VERSION=v0.1.4 sudo ./deploy/update.sh
 ```
 
 ## CLI debugging
