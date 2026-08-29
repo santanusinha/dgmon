@@ -38,7 +38,7 @@ detect_asset() {
 # Download the release binary and verify its sha256 checksum.
 download_release() {
     local asset="$1"
-    local base="https://github.com/${REPO}/releases/${VERSION}/download"
+    local base="https://github.com/${REPO}/releases/download/${VERSION}"
     local tmp
     tmp="$(mktemp -d)"
     echo "==> downloading ${asset}"
