@@ -247,15 +247,11 @@ pub async fn labels(state: web::Data<PromState>) -> impl Responder {
 
     let mut names = std::collections::BTreeSet::new();
     names.insert("__name__".to_string());
-    match ts.list_metrics() {
-        Ok(metrics) => {
-            for m in &metrics {
-                if let Ok(series) = ts.query_all(m, 0, chrono::Utc::now().timestamp_millis()) {
-                    for (labels, _) in series {
-                        for (k, _) in labels {
-                            names.insert(k);
-                        }
-                    }
+    match ts.list_series() {
+        Ok(series) => {
+            for s in &series {
+                for l in &s.labels {
+                    names.insert(l.name.clone());
                 }
             }
         }
@@ -282,16 +278,12 @@ pub async fn label_values(
 
     let name = path.into_inner();
     let mut values = std::collections::BTreeSet::new();
-    match ts.list_metrics() {
-        Ok(metrics) => {
-            for m in &metrics {
-                if let Ok(series) = ts.query_all(m, 0, chrono::Utc::now().timestamp_millis()) {
-                    for (labels, _) in series {
-                        for (k, v) in &labels {
-                            if k == &name {
-                                values.insert(v.clone());
-                            }
-                        }
+    match ts.list_series() {
+        Ok(series) => {
+            for s in &series {
+                for l in &s.labels {
+                    if l.name == name {
+                        values.insert(l.value.clone());
                     }
                 }
             }
@@ -343,7 +335,6 @@ pub async fn query_batch(
     body: web::Json<BatchRequest>,
 ) -> impl Responder {
     let ts = &state.tsink;
-
     let req = body.into_inner();
     if req.queries.is_empty() {
         return error_response("missing 'queries' array");

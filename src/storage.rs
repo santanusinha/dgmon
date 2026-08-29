@@ -43,11 +43,15 @@ impl TsinkStore {
     }
 
     /// Write all metrics from a snapshot into tsink.
-    /// Write all metrics from a snapshot into tsink.
     pub fn write_snapshot(&self, snap: &Snapshot) -> anyhow::Result<()> {
         let ts = snap.timestamp.timestamp_millis();
         let host = &snap.host.hostname;
-        let mut rows = Vec::new();
+        // Pre-allocate for the expected number of rows: host metrics, per-CPU
+        // cores, per-interface, per-GPU, and inference metrics.
+        let mut rows = Vec::with_capacity(
+            8 + snap.host.cpu_cores.len() + snap.host.networks.len() * 5 + snap.gpus.len() * 20,
+        );
+
 
         // Base labels for every row: hostname plus extra metadata labels.
         let mut base_labels = vec![Label::new("hostname", host)];
@@ -336,7 +340,13 @@ impl TsinkStore {
         names.dedup();
         Ok(names)
     }
-
+    /// List all series (metric name + labels) stored in tsink.
+    ///
+    /// This is cheaper than `query_all` for label discovery because it reads
+    /// only the series metadata, not the data points.
+    pub fn list_series(&self) -> anyhow::Result<Vec<tsink::MetricSeries>> {
+        Ok(self.storage.list_metrics()?)
+    }
 
     /// Query all series for a metric within a time range.
     /// Returns (labels, points) pairs, one per label set.
