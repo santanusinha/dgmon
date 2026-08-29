@@ -18,12 +18,18 @@
 //! metrics and does not fail the snapshot.
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use crate::collector::InferenceSample;
 
 /// HTTP timeout for scraping inference endpoints.
 const SCRAPE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How often to re-run inference server discovery (Docker/process/netstat).
+/// Discovery is expensive (talks to the Docker daemon), so we cache the
+/// results and only re-discover when the cache expires.
+const DISCOVERY_TTL: Duration = Duration::from_secs(60);
 
 /// A discovered inference server endpoint.
 #[derive(Debug, Clone)]
@@ -34,12 +40,77 @@ pub struct InferenceTarget {
     pub engine: String,
 }
 
+/// Cache for inference discovery results. Discovery is expensive (Docker
+/// daemon, process table, netstat), so we only re-run it periodically.
+pub struct InferenceCache {
+    targets: Mutex<Option<(Instant, Vec<InferenceTarget>)>>,
+}
+
+impl InferenceCache {
+    pub fn new() -> Self {
+        Self {
+            targets: Mutex::new(None),
+        }
+    }
+
+    /// Get cached targets if they are still fresh, otherwise None.
+    fn get(&self) -> Option<Vec<InferenceTarget>> {
+        let guard = self.targets.lock().unwrap();
+        match &*guard {
+            Some((at, targets)) if at.elapsed() < DISCOVERY_TTL => Some(targets.clone()),
+            _ => None,
+        }
+    }
+
+    /// Store freshly discovered targets.
+    fn set(&self, targets: Vec<InferenceTarget>) {
+        let mut guard = self.targets.lock().unwrap();
+        *guard = Some((Instant::now(), targets));
+    }
+}
+
+impl Default for InferenceCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Discover inference servers and scrape their metrics.
 /// Returns an empty vector when no server is found.
+///
+/// Discovery results are cached in `cache` for `DISCOVERY_TTL`. Only the
+/// metric scraping runs on every call; the expensive discovery (Docker
+/// daemon, process table, netstat) runs only when the cache expires.
 pub async fn collect_inference(
     client: &reqwest::Client,
     manual_targets: &[String],
+    cache: &InferenceCache,
 ) -> Vec<InferenceSample> {
+    // Use cached targets when fresh; otherwise re-discover.
+    let targets = match cache.get() {
+        Some(t) => t,
+        None => {
+            let discovered = discover_targets(manual_targets).await;
+            cache.set(discovered.clone());
+            discovered
+        }
+    };
+
+    let mut samples = Vec::new();
+    for target in targets {
+        match scrape_target(client, &target).await {
+            Ok(sample) => samples.push(sample),
+            Err(e) => tracing::debug!(
+                "scrape {} failed: {e:#}",
+                target.base_url
+            ),
+        }
+    }
+    samples
+}
+
+/// Run the full discovery pipeline (Docker, manual, process, netstat).
+async fn discover_targets(manual_targets: &[String]) -> Vec<InferenceTarget> {
     let mut targets = Vec::new();
 
     // 1. Docker discovery via bollard (auto-detection, highest priority).
@@ -75,18 +146,7 @@ pub async fn collect_inference(
     // Deduplicate targets by base_url.
     let mut seen = std::collections::HashSet::new();
     targets.retain(|t| seen.insert(t.base_url.clone()));
-
-    let mut samples = Vec::new();
-    for target in targets {
-        match scrape_target(client, &target).await {
-            Ok(sample) => samples.push(sample),
-            Err(e) => tracing::debug!(
-                "scrape {} failed: {e:#}",
-                target.base_url
-            ),
-        }
-    }
-    samples
+    targets
 }
 
 /// Scrape `/metrics` and `/v1/models` from one target.

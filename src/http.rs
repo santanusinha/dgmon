@@ -88,7 +88,7 @@ pub async fn health() -> impl Responder {
 
 /// Render snapshots in Prometheus text exposition format.
 /// Shared by the server (all nodes) and the service (single node).
-pub fn render_prometheus(snaps: &[Snapshot]) -> String {
+pub fn render_prometheus(snaps: &[Arc<Snapshot>]) -> String {
     let mut out = String::new();
 
     for snap in snaps {

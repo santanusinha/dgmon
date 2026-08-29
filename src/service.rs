@@ -16,7 +16,7 @@ use crate::api::{self, ApiState, SnapshotSource};
 use crate::collector::{Collector, Snapshot};
 use crate::http::{self, AppState};
 use crate::promapi::PromState;
-use crate::inference::collect_inference;
+use crate::inference::{collect_inference, InferenceCache};
 use crate::storage::TsinkStore;
 use crate::store::NodeStore;
 
@@ -60,7 +60,8 @@ async fn ingest(
 
     state.store.put(hostname.clone(), snap);
     tracing::debug!("ingested snapshot from {hostname}: {n_gpus} GPUs");
-    HttpResponse::Ok().body("ok\n")
+    HttpResponse::Ok().body("ok
+")
 }
 
 /// Fallback 404 handler.
@@ -204,6 +205,7 @@ async fn collect_loop(
     client: reqwest::Client,
 ) {
     let mut ticker = tokio::time::interval(interval);
+    let inference_cache = InferenceCache::new();
     loop {
         ticker.tick().await;
 
@@ -233,8 +235,7 @@ async fn collect_loop(
         // Only scrape when the collector did not already provide inference
         // data (e.g. the mock collector supplies synthetic inference samples).
         if snap.inference.is_empty() {
-            let inference_servers = inference_servers.clone();
-            snap.inference = collect_inference(&client, &inference_servers).await;
+            snap.inference = collect_inference(&client, &inference_servers, &inference_cache).await;
         }
 
         let n = snap.gpus.len();

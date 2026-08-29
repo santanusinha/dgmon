@@ -5,14 +5,14 @@
 //! per hostname for fast Prometheus scraping and JSON listing.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use crate::api::SnapshotSource;
 use crate::collector::Snapshot;
 
 /// Multi-node in-memory store of the latest snapshot per host.
 pub struct NodeStore {
-    nodes: RwLock<HashMap<String, Snapshot>>,
+    nodes: RwLock<HashMap<String, Arc<Snapshot>>>,
 }
 
 impl NodeStore {
@@ -26,10 +26,13 @@ impl NodeStore {
         self.nodes
             .write()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(hostname, snap);
+            .insert(hostname, Arc::new(snap));
     }
 
-    pub fn all(&self) -> Vec<Snapshot> {
+    /// Return the latest snapshot per host without deep-cloning. Callers
+    /// receive `Arc<Snapshot>` handles, so repeated scrapes do not clone
+    /// the full snapshot graph.
+    pub fn all(&self) -> Vec<Arc<Snapshot>> {
         self.nodes
             .read()
             .unwrap_or_else(|e| e.into_inner())
@@ -53,10 +56,11 @@ impl NodeStore {
 }
 
 impl SnapshotSource for NodeStore {
-    fn all(&self) -> Vec<Snapshot> {
+    fn all(&self) -> Vec<Arc<Snapshot>> {
         self.all()
     }
 }
+
 
 #[derive(serde::Serialize)]
 pub struct NodeInfo {

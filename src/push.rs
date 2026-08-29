@@ -14,11 +14,15 @@ use std::time::Duration;
 use crate::collector::{Collector, Snapshot};
 use crate::config::CollectorConfig;
 use crate::control::CommandOp;
-use crate::inference::collect_inference;
+use crate::inference::{collect_inference, InferenceCache};
 
 /// HTTP send timeout for each push. Keeps the agent responsive when the
 /// server is slow or unreachable.
 const SEND_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// How often to poll the control-plane mailbox. Polling adds an extra HTTP
+/// request per cycle, so we do it less frequently than the collection loop.
+const CONTROL_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 pub fn run(config: CollectorConfig, collector: Arc<dyn Collector>) -> anyhow::Result<()> {
     let url = config.server_url.clone();
@@ -49,13 +53,17 @@ pub fn run(config: CollectorConfig, collector: Arc<dyn Collector>) -> anyhow::Re
         .build()
         .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))?;
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
+    // The push agent runs a single task loop. A current-thread runtime uses
+    // fewer OS threads than the default multi-thread runtime.
+    let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| anyhow::anyhow!("failed to build tokio runtime: {e}"))?;
 
     rt.block_on(async move {
         let mut interval_timer = tokio::time::interval(interval);
+        let mut control_timer = tokio::time::interval(CONTROL_POLL_INTERVAL);
+        let inference_cache = InferenceCache::new();
         loop {
             interval_timer.tick().await;
 
@@ -93,20 +101,23 @@ pub fn run(config: CollectorConfig, collector: Arc<dyn Collector>) -> anyhow::Re
 
             // Scrape inference metrics asynchronously (does not block the loop).
             let inference_servers = inference_servers.clone();
-            snap.inference = collect_inference(&client, &inference_servers).await;
+            snap.inference = collect_inference(&client, &inference_servers, &inference_cache).await;
 
             match push(&client, &url, &snap, &hostname).await {
                 Ok(()) => tracing::debug!("pushed snapshot to {}", url),
                 Err(e) => tracing::warn!("push to {} failed: {e:#}", url),
             }
 
-            // Poll the control-plane mailbox for a pending command.
+            // Poll the control-plane mailbox less frequently than the
+            // collection loop to reduce HTTP requests.
+            control_timer.tick().await;
             poll_and_execute(&client, &url, &hostname).await;
         }
     });
 
     Ok(())
 }
+
 
 async fn push(
     client: &reqwest::Client,

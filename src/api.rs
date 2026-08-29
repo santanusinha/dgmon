@@ -100,7 +100,7 @@ pub struct ApiState {
 /// Abstraction over the snapshot store so the API works in both server and
 /// service modes.
 pub trait SnapshotSource {
-    fn all(&self) -> Vec<Snapshot>;
+    fn all(&self) -> Vec<Arc<Snapshot>>;
 }
 
 /// GET /api/v1/nodes — list all nodes.
@@ -128,7 +128,7 @@ pub async fn node_snapshot(
     match find_snapshot(&state, &hostname) {
         Some(snap) => HttpResponse::Ok()
             .content_type("application/json")
-            .body(serde_json::to_string_pretty(&snap).unwrap_or_default()),
+            .body(serde_json::to_string_pretty(&*snap).unwrap_or_default()),
         None => not_found("node_not_found", &format!("no node named '{hostname}'")),
     }
 }
@@ -278,7 +278,7 @@ pub async fn metric_history(
     }
 }
 
-fn find_snapshot(state: &web::Data<ApiState>, hostname: &str) -> Option<Snapshot> {
+fn find_snapshot(state: &web::Data<ApiState>, hostname: &str) -> Option<Arc<Snapshot>> {
     state
         .snapshots
         .all()

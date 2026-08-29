@@ -18,17 +18,23 @@ pub struct NvidiaSmiCollector {
     hostname: String,
     sys: std::sync::Mutex<sysinfo::System>,
     nets: std::sync::Mutex<sysinfo::Networks>,
+    disks: std::sync::Mutex<sysinfo::Disks>,
+    /// Cached per-core CPU governor and max frequency. These change rarely.
+    cpu_static: std::sync::Mutex<Vec<(Option<String>, Option<u32>)>>,
 }
 
 impl NvidiaSmiCollector {
     pub fn new() -> Self {
         let sys = sysinfo::System::new_all();
         let nets = sysinfo::Networks::new_with_refreshed_list();
+        let disks = sysinfo::Disks::new_with_refreshed_list();
         let hostname = sysinfo::System::host_name().unwrap_or_else(|| "unknown".into());
         Self {
             hostname,
             sys: std::sync::Mutex::new(sys),
             nets: std::sync::Mutex::new(nets),
+            disks: std::sync::Mutex::new(disks),
+            cpu_static: std::sync::Mutex::new(Vec::new()),
         }
     }
 }
@@ -144,11 +150,16 @@ impl Collector for NvidiaSmiCollector {
 
         {
             let mut sys = self.sys.lock().unwrap();
-            sys.refresh_all();
+            // Targeted refresh: only CPU usage and memory. Avoid refresh_all()
+            // which also refreshes processes (very expensive).
+            sys.refresh_cpu_usage();
+            sys.refresh_memory();
         }
         let mut nets = self.nets.lock().unwrap();
         nets.refresh();
-        let host = self.build_host(&nets);
+        let mut disks = self.disks.lock().unwrap();
+        disks.refresh();
+        let host = self.build_host(&nets, &disks);
 
         Ok(Snapshot {
             timestamp: chrono::Utc::now(),
@@ -161,16 +172,13 @@ impl Collector for NvidiaSmiCollector {
 }
 
 impl NvidiaSmiCollector {
-    fn build_host(&self, nets: &sysinfo::Networks) -> HostSample {
-        use sysinfo::Disks;
-
+    fn build_host(&self, nets: &sysinfo::Networks, disks: &sysinfo::Disks) -> HostSample {
         let sys = self.sys.lock().unwrap();
         let cpu_usage = sys.global_cpu_usage();
         let mem_used = sys.used_memory() / 1024 / 1024; // bytes → MiB
         let mem_total = sys.total_memory() / 1024 / 1024;
 
         let (disk_used, disk_total) = {
-            let disks = Disks::new_with_refreshed_list();
             let total: u64 = disks.iter().map(|d| d.total_space()).sum();
             let used: u64 = disks.iter().map(|d| d.total_space() - d.available_space()).sum();
             (used as f64 / 1_000_000_000.0, total as f64 / 1_000_000_000.0)
@@ -186,17 +194,29 @@ impl NvidiaSmiCollector {
             (rx, tx)
         };
 
-        // Per-CPU-core utilization.
+        // Per-CPU-core utilization. Governor and max frequency are cached
+        // because they change rarely; only the current frequency is read
+        // fresh each cycle.
+        let mut cpu_static = self.cpu_static.lock().unwrap();
+        if cpu_static.len() != sys.cpus().len() {
+            cpu_static.clear();
+            for i in 0..sys.cpus().len() {
+                cpu_static.push((Self::read_cpu_governor(i), Self::read_cpu_max_freq(i)));
+            }
+        }
         let cpu_cores = sys
             .cpus()
             .iter()
             .enumerate()
-            .map(|(i, c)| CpuCoreSample {
-                index: i as u32,
-                usage_pct: c.cpu_usage(),
-                freq_mhz: Self::read_cpu_freq(i),
-                governor: Self::read_cpu_governor(i),
-                max_freq_mhz: Self::read_cpu_max_freq(i),
+            .map(|(i, c)| {
+                let (governor, max_freq) = cpu_static.get(i).cloned().unwrap_or_default();
+                CpuCoreSample {
+                    index: i as u32,
+                    usage_pct: c.cpu_usage(),
+                    freq_mhz: Self::read_cpu_freq(i),
+                    governor,
+                    max_freq_mhz: max_freq,
+                }
             })
             .collect();
 
@@ -229,6 +249,7 @@ impl NvidiaSmiCollector {
             networks,
         }
     }
+
 
     /// Read the current CPU frequency from sysfs.
     /// Returns the frequency in MHz, or None if unavailable.

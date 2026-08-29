@@ -2,7 +2,7 @@
 // All data comes from the Prometheus-compatible API (/api/v1/) using PromQL.
 "use strict";
 
-const REFRESH_MS = 5000;
+const REFRESH_MS = 10000;
 const PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#ca8a04", "#be185d"];
 
 const state = { nodes: [], selected: null, charts: {}, timer: null, view: "cluster" };
